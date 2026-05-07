@@ -35,7 +35,7 @@ class NavdocAgent:
         *,
         system_prompt: str = "",
         model: str = DEFAULT_MODEL,
-        top_k: int = 5,
+        tool_args: dict[str, dict] | None = None,
         temperature: float = DEFAULT_TEMPERATURE,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
     ) -> AgentResponse:
@@ -76,8 +76,9 @@ class NavdocAgent:
                 if not isinstance(block, ToolUseBlock):
                     continue
                 args = dict(block.input)
-                if block.name == "search" and "top_k" not in args:
-                    args["top_k"] = top_k
+                for key, val in (tool_args or {}).get(block.name, {}).items():
+                    if key not in args:
+                        args[key] = val
 
                 tool_output = await call_tool_fn(block.name, args)
                 collected_tool_calls.append(

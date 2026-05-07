@@ -96,7 +96,7 @@ async def test_ask_single_tool_call(mock_mcp_tools):
             "What is asyncio?",
             mcp_tools=mock_mcp_tools,
             call_tool_fn=fake_call_tool,
-            top_k=3,
+            tool_args={"search": {"top_k": 3}},
         )
 
     assert response.answer == "Answer after search"

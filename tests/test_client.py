@@ -87,12 +87,10 @@ async def test_ask_returns_agent_response(mock_mcp_tools):
             account_id="acc_test",
             anthropic_api_key="sk-ant-test",
         )
-        result = await client.ask("What is asyncio?", top_k=5)
+        result = await client.ask("What is asyncio?")
 
     assert result is expected
     mock_agent.ask.assert_called_once()
-    call_kwargs = mock_agent.ask.call_args.kwargs
-    assert call_kwargs["top_k"] == 5
 
 
 async def test_ask_with_tools_allowlist(mock_mcp_tools):

@@ -47,7 +47,7 @@ class NavdocClient:
         *,
         system_prompt: str = "",
         model: str = DEFAULT_MODEL,
-        top_k: int = 5,
+        tool_args: dict[str, dict] | None = None,
         temperature: float = 0.0,
         max_iterations: int = 10,
         tools: list[str] | None = None,
@@ -74,7 +74,7 @@ class NavdocClient:
             call_tool_fn=call_tool,
             system_prompt=system_prompt,
             model=model,
-            top_k=top_k,
+            tool_args=tool_args,
             temperature=temperature,
             max_iterations=max_iterations,
         )
