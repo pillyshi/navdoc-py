@@ -4,6 +4,9 @@
 # Claude Code
 CLAUDE.md
 
+# Local examples (not for distribution)
+examples/
+
 # Python
 __pycache__/
 *.py[cod]
