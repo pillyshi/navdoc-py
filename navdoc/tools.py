@@ -19,15 +19,6 @@ class NavdocTools:
             headers={"Authorization": f"Bearer {self._api_key}"}
         )
 
-    async def search(self, query: str, top_k: int = 5) -> list[dict]:
-        result = await self._call_tool("search", {"query": query, "top_k": top_k})
-        return self._parse_tool_result(result)
-
-    async def get_document(self, url: str) -> dict:
-        result = await self._call_tool("get_document", {"url": url})
-        parsed = self._parse_tool_result(result)
-        return parsed[0] if parsed else {}
-
     async def list_tools(self) -> list[mcp_types.Tool]:
         try:
             async with self._make_http_client() as http:

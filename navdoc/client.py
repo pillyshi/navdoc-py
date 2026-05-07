@@ -1,12 +1,10 @@
 import os
 
-from dotenv import load_dotenv
+from mcp import types as mcp_types
 
 from .tools import NavdocTools
 from .agent import NavdocAgent
 from .models import AgentResponse
-
-load_dotenv()
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
@@ -35,11 +33,12 @@ class NavdocClient:
 
         self._tools = NavdocTools(self._api_key, self._account_id)
 
-    async def search(self, query: str, top_k: int = 5) -> list[dict]:
-        return await self._tools.search(query, top_k=top_k)
+    async def list_tools(self) -> list[mcp_types.Tool]:
+        return await self._tools.list_tools()
 
-    async def get_document(self, url: str) -> dict:
-        return await self._tools.get_document(url)
+    async def call_tool(self, name: str, arguments: dict) -> list[dict]:
+        result = await self._tools._call_tool(name, arguments)
+        return self._tools._parse_tool_result(result)
 
     async def ask(
         self,
@@ -55,9 +54,8 @@ class NavdocClient:
         mcp_tools = await self._tools.list_tools()
 
         async def call_tool(name: str, args: dict) -> dict:
-            result = await self._tools._call_tool(name, args)
-            parsed = self._tools._parse_tool_result(result)
-            return parsed[0] if parsed else {}
+            results = await self.call_tool(name, args)
+            return results[0] if results else {}
 
         return await agent.ask(
             question,

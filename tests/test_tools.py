@@ -31,32 +31,6 @@ def patch_mcp(session_mock):
     return p1, p2
 
 
-async def test_search_calls_mcp_with_correct_args(mock_search_result):
-    session = make_session_mock(call_tool_result=mock_search_result)
-    p1, p2 = patch_mcp(session)
-
-    with p1, p2:
-        tools = NavdocTools("wf_test", "acc_test")
-        results = await tools.search("Python asyncio", top_k=3)
-
-    session.call_tool.assert_called_once_with("search", {"query": "Python asyncio", "top_k": 3})
-    assert isinstance(results, list)
-    assert len(results) == 1
-    assert "text" in results[0]
-
-
-async def test_get_document_calls_mcp(mock_get_document_result):
-    session = make_session_mock(call_tool_result=mock_get_document_result)
-    p1, p2 = patch_mcp(session)
-
-    with p1, p2:
-        tools = NavdocTools("wf_test", "acc_test")
-        doc = await tools.get_document(url="https://example.com/doc")
-
-    session.call_tool.assert_called_once_with("get_document", {"url": "https://example.com/doc"})
-    assert isinstance(doc, dict)
-
-
 async def test_list_tools_returns_tool_list(mock_mcp_tools):
     list_result = MagicMock()
     list_result.tools = mock_mcp_tools

@@ -6,12 +6,15 @@ from navdoc.exceptions import MissingAnthropicKeyError
 from navdoc.models import AgentResponse, ToolCall
 
 
-def test_missing_api_key_raises():
+def test_missing_api_key_raises(monkeypatch):
+    monkeypatch.delenv("NAVDOC_API_KEY", raising=False)
+    monkeypatch.delenv("NAVDOC_ACCOUNT_ID", raising=False)
     with pytest.raises(ValueError, match="api_key"):
         NavdocClient(api_key="", account_id="acc")
 
 
-def test_missing_account_id_raises():
+def test_missing_account_id_raises(monkeypatch):
+    monkeypatch.delenv("NAVDOC_ACCOUNT_ID", raising=False)
     with pytest.raises(ValueError, match="account_id"):
         NavdocClient(api_key="wf_test", account_id="")
 
@@ -24,41 +27,40 @@ def test_env_var_fallback(monkeypatch):
     assert client._account_id == "acc_env"
 
 
-async def test_search_delegates_to_tools():
+async def test_list_tools_returns_tools(mock_mcp_tools):
     with patch("navdoc.client.NavdocTools") as MockTools:
         mock_instance = MockTools.return_value
-        mock_instance.search = AsyncMock(return_value=[{"text": "result"}])
+        mock_instance.list_tools = AsyncMock(return_value=mock_mcp_tools)
 
         client = NavdocClient(api_key="wf_test", account_id="acc_test")
-        result = await client.search("query", top_k=3)
+        result = await client.list_tools()
 
-    mock_instance.search.assert_called_once_with("query", top_k=3)
+    assert result == mock_mcp_tools
+
+
+async def test_call_tool_returns_parsed_result():
+    from unittest.mock import MagicMock
+    raw = MagicMock()
+    with patch("navdoc.client.NavdocTools") as MockTools:
+        mock_instance = MockTools.return_value
+        mock_instance._call_tool = AsyncMock(return_value=raw)
+        mock_instance._parse_tool_result = MagicMock(return_value=[{"text": "result"}])
+
+        client = NavdocClient(api_key="wf_test", account_id="acc_test")
+        result = await client.call_tool("search", {"query": "test"})
+
+    mock_instance._call_tool.assert_called_once_with("search", {"query": "test"})
+    mock_instance._parse_tool_result.assert_called_once_with(raw)
     assert result == [{"text": "result"}]
 
 
-async def test_get_document_delegates_to_tools():
-    with patch("navdoc.client.NavdocTools") as MockTools:
-        mock_instance = MockTools.return_value
-        mock_instance.get_document = AsyncMock(return_value={"title": "Doc"})
-
-        client = NavdocClient(api_key="wf_test", account_id="acc_test")
-        result = await client.get_document(url="https://example.com")
-
-    mock_instance.get_document.assert_called_once_with("https://example.com")
-    assert result == {"title": "Doc"}
-
-
 async def test_ask_raises_missing_anthropic_key():
-    client = NavdocClient(
-        api_key="wf_test",
-        account_id="acc_test",
-        anthropic_api_key=None,
-    )
-    # ANTHROPIC_API_KEY env var must also be absent
     with patch.dict("os.environ", {}, clear=True), pytest.raises(MissingAnthropicKeyError):
-        # NavdocAgent raises in __init__, so patch os.environ to remove any existing key
-        import os
-        os.environ.pop("ANTHROPIC_API_KEY", None)
+        client = NavdocClient(
+            api_key="wf_test",
+            account_id="acc_test",
+            anthropic_api_key=None,
+        )
         await client.ask("question")
 
 
