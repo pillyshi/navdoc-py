@@ -93,3 +93,53 @@ async def test_ask_returns_agent_response(mock_mcp_tools):
     mock_agent.ask.assert_called_once()
     call_kwargs = mock_agent.ask.call_args.kwargs
     assert call_kwargs["top_k"] == 5
+
+
+async def test_ask_with_tools_allowlist(mock_mcp_tools):
+    from navdoc.exceptions import NavdocError
+
+    expected = AgentResponse(
+        answer="answer",
+        tool_calls=[],
+        model="claude-sonnet-4-6",
+        usage={"input_tokens": 10, "output_tokens": 5},
+    )
+
+    with patch("navdoc.client.NavdocTools") as MockTools, \
+         patch("navdoc.client.NavdocAgent") as MockAgent:
+        mock_tools = MockTools.return_value
+        mock_tools.list_tools = AsyncMock(return_value=mock_mcp_tools)
+        mock_tools._call_tool = AsyncMock()
+        mock_tools._parse_tool_result = MagicMock(return_value=[{}])
+
+        mock_agent = MockAgent.return_value
+        mock_agent.ask = AsyncMock(return_value=expected)
+
+        client = NavdocClient(
+            api_key="wf_test",
+            account_id="acc_test",
+            anthropic_api_key="sk-ant-test",
+        )
+        await client.ask("question", tools=["search"])
+
+    call_kwargs = mock_agent.ask.call_args.kwargs
+    passed_tools = call_kwargs["mcp_tools"]
+    assert len(passed_tools) == 1
+    assert passed_tools[0].name == "search"
+
+
+async def test_ask_with_unknown_tool_raises(mock_mcp_tools):
+    from navdoc.exceptions import NavdocError
+
+    with patch("navdoc.client.NavdocTools") as MockTools, \
+         patch("navdoc.client.NavdocAgent"):
+        mock_tools = MockTools.return_value
+        mock_tools.list_tools = AsyncMock(return_value=mock_mcp_tools)
+
+        client = NavdocClient(
+            api_key="wf_test",
+            account_id="acc_test",
+            anthropic_api_key="sk-ant-test",
+        )
+        with pytest.raises(NavdocError, match="Unknown tools"):
+            await client.ask("question", tools=["nonexistent_tool"])

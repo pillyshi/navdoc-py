@@ -5,6 +5,7 @@ from mcp import types as mcp_types
 from .tools import NavdocTools
 from .agent import NavdocAgent
 from .models import AgentResponse
+from .exceptions import NavdocError
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
@@ -49,9 +50,19 @@ class NavdocClient:
         top_k: int = 5,
         temperature: float = 0.0,
         max_iterations: int = 10,
+        tools: list[str] | None = None,
     ) -> AgentResponse:
         agent = NavdocAgent(anthropic_api_key=self._anthropic_api_key)
         mcp_tools = await self._tools.list_tools()
+
+        if tools is not None:
+            available_names = {t.name for t in mcp_tools}
+            unknown = set(tools) - available_names
+            if unknown:
+                raise NavdocError(
+                    f"Unknown tools: {sorted(unknown)}. Available: {sorted(available_names)}"
+                )
+            mcp_tools = [t for t in mcp_tools if t.name in set(tools)]
 
         async def call_tool(name: str, args: dict) -> dict:
             results = await self.call_tool(name, args)
