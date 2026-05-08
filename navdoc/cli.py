@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import typer
+from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.history import InMemoryHistory
 from rich import box
 from rich.console import Console
 from rich.markdown import Markdown
@@ -252,6 +255,8 @@ def chat_cmd(
         history.append({"role": "user", "content": question})
         history.append({"role": "assistant", "content": answer})
 
+    input_history = InMemoryHistory()
+
     try:
         if config_obj.user_prompt and not no_initial_message:
             resolved = _resolve_placeholders(config_obj, overrides)
@@ -261,7 +266,7 @@ def chat_cmd(
 
         while True:
             try:
-                user_input = Prompt.ask("[bold green]You[/bold green]")
+                user_input = pt_prompt(HTML("<b><ansigreen>You</ansigreen></b>: "), history=input_history)
             except (KeyboardInterrupt, EOFError):
                 console.print("\n[dim]Bye.[/dim]")
                 break
