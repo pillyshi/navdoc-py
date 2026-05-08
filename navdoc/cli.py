@@ -19,7 +19,7 @@ class AskConfig:
     name: str
     description: str
     system_prompt: str
-    user_prompt: str
+    user_prompt: str | None = None
     placeholders: list[Placeholder] = field(default_factory=list)
     tools: list[str] | None = None
 
@@ -38,7 +38,7 @@ def _make_client() -> "NavdocClient":  # noqa: F821
     return NavdocClient()
 
 
-def _load_ask_config(path: Path) -> AskConfig:
+def _read_json(path: Path) -> dict:
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -47,20 +47,19 @@ def _load_ask_config(path: Path) -> AskConfig:
     except PermissionError:
         typer.echo(f"Error: cannot read config file: '{path}'")
         raise typer.Exit(1)
-
     try:
         data = json.loads(text)
     except json.JSONDecodeError as e:
         typer.echo(f"Error: invalid JSON in '{path}': {e}")
         raise typer.Exit(1)
-
     if not isinstance(data, dict):
         typer.echo("Error: config must be a JSON object")
         raise typer.Exit(1)
+    return data
 
-    if "user_prompt" not in data:
-        typer.echo("Error: config missing required field 'user_prompt'")
-        raise typer.Exit(1)
+
+def _load_config(path: Path) -> AskConfig:
+    data = _read_json(path)
 
     placeholders: list[Placeholder] = []
     for item in data.get("placeholders", []):
@@ -84,10 +83,22 @@ def _load_ask_config(path: Path) -> AskConfig:
         name=data.get("name", ""),
         description=data.get("description", ""),
         system_prompt=data.get("system_prompt", ""),
-        user_prompt=data["user_prompt"],
+        user_prompt=data.get("user_prompt"),
         placeholders=placeholders,
         tools=tools,
     )
+
+
+def _resolve_placeholders(config: AskConfig, overrides: dict[str, str]) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+    for ph in config.placeholders:
+        if ph.key in overrides:
+            resolved[ph.key] = overrides[ph.key]
+        elif ph.default:
+            resolved[ph.key] = ph.default
+        else:
+            resolved[ph.key] = typer.prompt(ph.label)
+    return resolved
 
 
 def _render_template(template: str, values: dict[str, str]) -> str:
@@ -113,7 +124,7 @@ def list_tools() -> None:
 
 @app.command("ask")
 def ask_cmd(
-    config: Path = typer.Option(..., "--config", help="Path to ask config JSON file."),
+    config: Path = typer.Option(..., "--config", help="Path to config JSON file."),
     var: list[str] = typer.Option([], help="Placeholder value as key=value."),
 ) -> None:
     """Run a one-shot ask query defined by a config JSON file."""
@@ -125,22 +136,18 @@ def ask_cmd(
         key, _, value = item.partition("=")
         overrides[key.strip()] = value
 
-    config_obj = _load_ask_config(config)
+    config_obj = _load_config(config)
+
+    if not config_obj.user_prompt:
+        typer.echo("Error: config missing required field 'user_prompt'")
+        raise typer.Exit(1)
 
     placeholder_keys = {p.key for p in config_obj.placeholders}
     for key in overrides:
         if key not in placeholder_keys:
             typer.echo(f"Warning: --var key '{key}' not found in placeholders, ignoring.")
 
-    resolved: dict[str, str] = {}
-    for ph in config_obj.placeholders:
-        if ph.key in overrides:
-            resolved[ph.key] = overrides[ph.key]
-        elif ph.default:
-            resolved[ph.key] = ph.default
-        else:
-            resolved[ph.key] = typer.prompt(ph.label)
-
+    resolved = _resolve_placeholders(config_obj, overrides)
     question = _render_template(config_obj.user_prompt, resolved)
     system_prompt = _render_template(config_obj.system_prompt, resolved)
 
@@ -160,16 +167,75 @@ def ask_cmd(
                 "Export it with: export ANTHROPIC_API_KEY=sk-ant-..."
             )
             raise typer.Exit(1)
-        except NavdocError as e:
-            typer.echo(f"Error: {e}")
-            raise typer.Exit(1)
-        except ValueError as e:
+        except (NavdocError, ValueError) as e:
             typer.echo(f"Error: {e}")
             raise typer.Exit(1)
 
         typer.echo(response.answer)
 
     asyncio.run(_run())
+
+
+@app.command("chat")
+def chat_cmd(
+    config: Path = typer.Option(..., "--config", help="Path to config JSON file."),
+    no_initial_message: bool = typer.Option(
+        False, "--no-initial-message", help="Do not send user_prompt as the first message."
+    ),
+) -> None:
+    """Start an interactive multi-turn chat session."""
+    config_obj = _load_config(config)
+
+    typer.echo("チャットを開始します。終了するには exit または Ctrl+C を入力してください。\n")
+
+    history: list = []
+
+    async def _send(question: str) -> str:
+        from navdoc.exceptions import MissingAnthropicKeyError, NavdocError
+
+        try:
+            client = _make_client()
+            response = await client.ask(
+                question,
+                messages=history,
+                system_prompt=config_obj.system_prompt,
+                tools=config_obj.tools,
+            )
+        except MissingAnthropicKeyError:
+            typer.echo(
+                "Error: ANTHROPIC_API_KEY is not set.\n"
+                "Export it with: export ANTHROPIC_API_KEY=sk-ant-..."
+            )
+            raise typer.Exit(1)
+        except (NavdocError, ValueError) as e:
+            typer.echo(f"Error: {e}")
+            raise typer.Exit(1)
+        return response.answer
+
+    def turn(question: str) -> None:
+        answer = asyncio.run(_send(question))
+        typer.echo(f"\nClaude: {answer}\n")
+        history.append({"role": "user", "content": question})
+        history.append({"role": "assistant", "content": answer})
+
+    if config_obj.user_prompt and not no_initial_message:
+        resolved = _resolve_placeholders(config_obj, overrides={})
+        question = _render_template(config_obj.user_prompt, resolved)
+        typer.echo(f"You: {question}")
+        turn(question)
+
+    while True:
+        try:
+            user_input = typer.prompt("You")
+        except (KeyboardInterrupt, EOFError):
+            typer.echo("\n終了します。")
+            break
+        if user_input.strip().lower() in {"exit", "quit"}:
+            typer.echo("終了します。")
+            break
+        if not user_input.strip():
+            continue
+        turn(user_input)
 
 
 def main() -> None:

@@ -1,5 +1,6 @@
 import os
 
+from anthropic.types import MessageParam
 from mcp import types as mcp_types
 
 from .tools import NavdocTools
@@ -45,6 +46,7 @@ class NavdocClient:
         self,
         question: str,
         *,
+        messages: list[MessageParam] | None = None,
         system_prompt: str = "",
         model: str = DEFAULT_MODEL,
         tool_args: dict[str, dict] | None = None,
@@ -72,6 +74,7 @@ class NavdocClient:
             question,
             mcp_tools=mcp_tools,
             call_tool_fn=call_tool,
+            prior_messages=messages,
             system_prompt=system_prompt,
             model=model,
             tool_args=tool_args,

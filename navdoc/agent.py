@@ -33,6 +33,7 @@ class NavdocAgent:
         mcp_tools: list[mcp_types.Tool],
         call_tool_fn: Callable[[str, dict], Awaitable[dict]],
         *,
+        prior_messages: list[MessageParam] | None = None,
         system_prompt: str = "",
         model: str = DEFAULT_MODEL,
         tool_args: dict[str, dict] | None = None,
@@ -40,7 +41,8 @@ class NavdocAgent:
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
     ) -> AgentResponse:
         tools = self._convert_tools(mcp_tools)
-        messages: list[MessageParam] = [{"role": "user", "content": question}]
+        messages: list[MessageParam] = list(prior_messages or [])
+        messages.append({"role": "user", "content": question})
         collected_tool_calls: list[ToolCall] = []
         total_input_tokens = 0
         total_output_tokens = 0
