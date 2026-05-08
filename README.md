@@ -1,6 +1,6 @@
 # navdoc-py
 
-Python SDK and CLI for [navdoc](https://navdoc.dev). Connects to navdoc's MCP server and uses the Anthropic API (Claude) to provide RAG-powered chat over your documents.
+Python SDK and CLI for [navdoc](https://dashboard.navdoc.dev). Connects to navdoc's MCP server and uses the Anthropic API (Claude) to provide RAG-powered chat over your documents.
 
 ## Installation
 
@@ -15,7 +15,7 @@ Set environment variables (or pass directly to `NavdocClient`):
 ```bash
 export NAVDOC_API_KEY=wf_...
 export NAVDOC_ACCOUNT_ID=...
-export ANTHROPIC_API_KEY=sk-ant-...   # required for ask() and the CLI
+export ANTHROPIC_API_KEY=sk-ant-...   # required for ask() and the CLI ask/chat commands
 ```
 
 ## CLI
@@ -56,18 +56,30 @@ Config format:
 
 ```json
 {
-  "name": "Daily summary",
-  "description": "Summarize the day's logs",
-  "system_prompt": "You are a log analyst.",
-  "user_prompt": "Summarize the logs for {{date}}.",
+  "name": "Daily Summary",
+  "description": "Summarize a day's lifelog entries with activity count and time-of-day trends",
+  "system_prompt": "You are a lifelog analyst. Respond in {{language}}.",
+  "user_prompt": "Please summarize the logs for {{date}}. Include the number of activities and time-of-day trends.",
   "placeholders": [
-    { "key": "date", "label": "Target date", "default": "today" }
+    {
+      "key": "date",
+      "label": "Target date",
+      "default": "today"
+    },
+    {
+      "key": "language",
+      "label": "Response language",
+      "default": "English"
+    }
   ],
-  "tools": ["semantic_search"]
+  "tools": [
+    "list_documents_by_date",
+    "get_current_time"
+  ]
 }
 ```
 
-- `user_prompt` supports `{{key}}` placeholders.
+- Both `system_prompt` and `user_prompt` support `{{key}}` placeholders.
 - If `--var key=value` is not provided, missing placeholders are prompted interactively (unless a `default` is set).
 - `tools` is optional. Omit to allow all available tools.
 
@@ -79,6 +91,30 @@ Start an interactive multi-turn chat session.
 navdoc chat --config qa.json
 navdoc chat --config qa.json --var topic=asyncio
 navdoc chat --config qa.json --no-initial-message
+```
+
+Config format:
+
+```json
+{
+  "name": "Pending Review",
+  "description": "Surface unresolved items and let the user mark them as done by adding a completion note",
+  "system_prompt": "You are a lifelog assistant. Respond in {{language}}.\n\nYour job:\n1. On startup, search the lifelog for unresolved items, open questions, and pending actions. Present them clearly, grouped by theme.\n2. During the conversation, when the user says something is done or resolved (e.g. 'that's done', 'I finished it', 'completed'), call add_document to record the completion. Use a URL like 'log://pending/<slug>' where <slug> is a short kebab-case identifier derived from the item. Set the document content to a short completion note including what was done and the date. Always confirm with the user before calling add_document.",
+  "user_prompt": "Search my lifelog for unresolved items, open questions, things I wanted to look into, and actions I mentioned but may not have completed. Group them by theme and flag anything time-sensitive.",
+  "placeholders": [
+    {
+      "key": "language",
+      "label": "Response language",
+      "default": "English"
+    }
+  ],
+  "tools": [
+    "get_current_time",
+    "semantic_search",
+    "keyword_search",
+    "add_document"
+  ]
+}
 ```
 
 Uses the same config format as `ask`. If `user_prompt` is set, it is sent as the first message automatically (`--no-initial-message` suppresses this). Type `exit` or press Ctrl+C to quit.
