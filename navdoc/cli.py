@@ -219,7 +219,7 @@ def chat_cmd(
             console.print(f"[yellow]Warning:[/yellow] --var key '{key}' not found in placeholders, ignoring.")
 
     console.print(Rule("navdoc chat"))
-    console.print("[dim]Chat started. Press Enter to send, Shift+Enter for newline. Type 'exit' or Ctrl+C to quit.[/dim]\n")
+    console.print("[dim]Chat started. Press Enter to send, Ctrl+J or Esc+Enter for newline. Type 'exit' or Ctrl+C to quit.[/dim]\n")
 
     history: list = []
 
@@ -264,7 +264,8 @@ def chat_cmd(
     def _submit(event):
         event.current_buffer.validate_and_handle()
 
-    @_kb.add("s-enter")
+    @_kb.add("c-j")
+    @_kb.add("escape", "enter")
     def _newline(event):
         event.current_buffer.insert_text("\n")
 
