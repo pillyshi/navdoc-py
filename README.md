@@ -1,6 +1,6 @@
 # navdoc-py
 
-Python SDK for [navdoc](https://navdoc.dev). Combines navdoc's MCP server with the Anthropic API (Claude) to provide both low-level MCP tool wrappers and a high-level RAG chat interface.
+Python SDK and CLI for [navdoc](https://navdoc.dev). Connects to navdoc's MCP server and uses the Anthropic API (Claude) to provide RAG-powered chat over your documents.
 
 ## Installation
 
@@ -8,91 +8,131 @@ Python SDK for [navdoc](https://navdoc.dev). Combines navdoc's MCP server with t
 pip install navdoc
 ```
 
-## Setup
+## Credentials
 
-Copy `.env.example` to `.env` and fill in your credentials:
+Set environment variables (or pass directly to `NavdocClient`):
 
 ```bash
-cp .env.example .env
+export NAVDOC_API_KEY=wf_...
+export NAVDOC_ACCOUNT_ID=...
+export ANTHROPIC_API_KEY=sk-ant-...   # required for ask() and the CLI
 ```
 
+## CLI
+
+### `navdoc list-tools`
+
+List all MCP tools exposed by the navdoc server.
+
+```bash
+navdoc list-tools
 ```
-NAVDOC_API_KEY=wf_...
-NAVDOC_ACCOUNT_ID=...
-ANTHROPIC_API_KEY=sk-ant-...
+
+### `navdoc ask`
+
+Run a one-shot query defined by a JSON config file.
+
+```bash
+navdoc ask --config daily.json
+navdoc ask --config daily.json --var date=2025-05-08
 ```
 
-Credentials can also be passed directly to `NavdocClient`.
+Config format:
 
-## Usage
+```json
+{
+  "name": "Daily summary",
+  "description": "Summarize the day's logs",
+  "system_prompt": "You are a log analyst.",
+  "user_prompt": "Summarize the logs for {{date}}.",
+  "placeholders": [
+    { "key": "date", "label": "Target date", "default": "today" }
+  ],
+  "tools": ["semantic_search"]
+}
+```
 
-### Low-level API
+- `user_prompt` supports `{{key}}` placeholders.
+- If `--var key=value` is not provided, missing placeholders are prompted interactively (unless a `default` is set).
+- `tools` is optional. Omit to allow all available tools.
 
-Only a navdoc API key is required.
+### `navdoc chat`
+
+Start an interactive multi-turn chat session.
+
+```bash
+navdoc chat --config qa.json
+navdoc chat --config qa.json --var topic=asyncio
+navdoc chat --config qa.json --no-initial-message
+```
+
+Uses the same config format as `ask`. If `user_prompt` is set, it is sent as the first message automatically (`--no-initial-message` suppresses this). Type `exit` or press Ctrl+C to quit.
+
+## Python SDK
+
+### `NavdocClient`
 
 ```python
 import asyncio
 from navdoc import NavdocClient
 
-async def main():
-    client = NavdocClient(api_key="wf_...", account_id="...")
-
-    # Search documents
-    results = await client.search("Python asyncio", top_k=5)
-    print(results)
-
-    # Fetch a document by URL
-    doc = await client.get_document(url="https://...")
-    print(doc)
-
-asyncio.run(main())
+client = NavdocClient(
+    api_key="wf_...",           # or NAVDOC_API_KEY env var
+    account_id="...",           # or NAVDOC_ACCOUNT_ID env var
+    anthropic_api_key="sk-...", # or ANTHROPIC_API_KEY env var (ask() only)
+)
 ```
 
-### High-level API (`ask`)
-
-Requires an Anthropic API key in addition to the navdoc API key. Claude uses navdoc's MCP tools in a tool-use loop to answer questions based on your documents.
+### `list_tools()`
 
 ```python
-import asyncio
-from navdoc import NavdocClient
-
-async def main():
-    client = NavdocClient(
-        api_key="wf_...",
-        account_id="...",
-        anthropic_api_key="sk-ant-...",  # or set ANTHROPIC_API_KEY env var
-    )
-
-    response = await client.ask(
-        "What is the difference between asyncio and threading?",
-        system_prompt="You are a documentation QA assistant.",
-        model="claude-sonnet-4-6",
-        top_k=5,
-    )
-
-    print(response.answer)
-    print(response.tool_calls)  # list of MCP tool calls made during the loop
-    print(response.usage)       # {"input_tokens": ..., "output_tokens": ...}
-
-asyncio.run(main())
+tools = await client.list_tools()
+for tool in tools:
+    print(tool.name, tool.description)
 ```
 
-### `ask()` parameters
+### `call_tool()`
+
+```python
+results = await client.call_tool("semantic_search", {"query": "asyncio", "top_k": 5})
+```
+
+### `ask()`
+
+Claude runs a tool-use loop against your documents and returns a final answer.
+
+```python
+response = await client.ask(
+    "What is the difference between asyncio and threading?",
+    system_prompt="You are a documentation QA assistant.",
+    model="claude-sonnet-4-6",
+    tools=["semantic_search"],        # optional allowlist
+    tool_args={"semantic_search": {"top_k": 10}},  # optional extra args per tool
+)
+
+print(response.answer)       # str
+print(response.tool_calls)   # list[ToolCall]
+print(response.usage)        # {"input_tokens": int, "output_tokens": int}
+```
+
+#### `ask()` parameters
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `system_prompt` | `str` | `""` | System prompt passed to Claude |
 | `model` | `str` | `"claude-sonnet-4-6"` | Claude model to use |
-| `top_k` | `int` | `5` | Number of search results to retrieve |
+| `messages` | `list` | `None` | Prior conversation history for multi-turn use |
+| `tools` | `list[str]` | `None` | Tool name allowlist (all tools if omitted) |
+| `tool_args` | `dict[str, dict]` | `None` | Extra arguments injected per tool call |
 | `temperature` | `float` | `0.0` | Claude sampling temperature |
 | `max_iterations` | `int` | `10` | Maximum tool-use loop iterations |
 
-### Response types
+#### Response types
 
 ```python
 @dataclass
 class ToolCall:
-    name: str    # e.g. "search"
+    name: str    # tool name, e.g. "semantic_search"
     input: dict  # arguments passed to the tool
     output: dict # result returned by the tool
 
@@ -107,17 +147,8 @@ class AgentResponse:
 ## Development
 
 ```bash
-# Install dependencies
-uv sync --dev
-
-# Run tests
-uv run pytest
-
-# Build
-uv run python -m build
-
-# Publish to PyPI
-uv run twine upload dist/*
+uv sync --dev   # install dependencies
+uv run pytest   # run tests
 ```
 
 ## License
