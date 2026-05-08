@@ -179,12 +179,26 @@ def ask_cmd(
 @app.command("chat")
 def chat_cmd(
     config: Path = typer.Option(..., "--config", help="Path to config JSON file."),
+    var: list[str] = typer.Option([], help="Placeholder value as key=value."),
     no_initial_message: bool = typer.Option(
         False, "--no-initial-message", help="Do not send user_prompt as the first message."
     ),
 ) -> None:
     """Start an interactive multi-turn chat session."""
+    overrides: dict[str, str] = {}
+    for item in var:
+        if "=" not in item:
+            typer.echo(f"Warning: ignoring --var '{item}' (no '=' found)")
+            continue
+        key, _, value = item.partition("=")
+        overrides[key.strip()] = value
+
     config_obj = _load_config(config)
+
+    placeholder_keys = {p.key for p in config_obj.placeholders}
+    for key in overrides:
+        if key not in placeholder_keys:
+            typer.echo(f"Warning: --var key '{key}' not found in placeholders, ignoring.")
 
     typer.echo("チャットを開始します。終了するには exit または Ctrl+C を入力してください。\n")
 
@@ -219,7 +233,7 @@ def chat_cmd(
         history.append({"role": "assistant", "content": answer})
 
     if config_obj.user_prompt and not no_initial_message:
-        resolved = _resolve_placeholders(config_obj, overrides={})
+        resolved = _resolve_placeholders(config_obj, overrides)
         question = _render_template(config_obj.user_prompt, resolved)
         typer.echo(f"You: {question}")
         turn(question)
