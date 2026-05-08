@@ -5,6 +5,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import typer
+from rich import box
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.rule import Rule
+from rich.table import Table
+
+console = Console()
 
 
 @dataclass
@@ -42,18 +51,18 @@ def _read_json(path: Path) -> dict:
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        typer.echo(f"Error: config file not found: '{path}'")
+        console.print(f"[bold red]Error:[/bold red] config file not found: '{path}'")
         raise typer.Exit(1)
     except PermissionError:
-        typer.echo(f"Error: cannot read config file: '{path}'")
+        console.print(f"[bold red]Error:[/bold red] cannot read config file: '{path}'")
         raise typer.Exit(1)
     try:
         data = json.loads(text)
     except json.JSONDecodeError as e:
-        typer.echo(f"Error: invalid JSON in '{path}': {e}")
+        console.print(f"[bold red]Error:[/bold red] invalid JSON in '{path}': {e}")
         raise typer.Exit(1)
     if not isinstance(data, dict):
-        typer.echo("Error: config must be a JSON object")
+        console.print("[bold red]Error:[/bold red] config must be a JSON object")
         raise typer.Exit(1)
     return data
 
@@ -64,7 +73,7 @@ def _load_config(path: Path) -> AskConfig:
     placeholders: list[Placeholder] = []
     for item in data.get("placeholders", []):
         if not isinstance(item, dict) or "key" not in item or "label" not in item:
-            typer.echo(f"Error: malformed placeholder entry: {item}")
+            console.print(f"[bold red]Error:[/bold red] malformed placeholder entry: {item}")
             raise typer.Exit(1)
         placeholders.append(
             Placeholder(
@@ -76,7 +85,7 @@ def _load_config(path: Path) -> AskConfig:
 
     tools = data.get("tools")
     if tools is not None and not isinstance(tools, list):
-        typer.echo("Warning: 'tools' must be a list, ignoring.")
+        console.print("[yellow]Warning:[/yellow] 'tools' must be a list, ignoring.")
         tools = None
 
     return AskConfig(
@@ -97,7 +106,7 @@ def _resolve_placeholders(config: AskConfig, overrides: dict[str, str]) -> dict[
         elif ph.default:
             resolved[ph.key] = ph.default
         else:
-            resolved[ph.key] = typer.prompt(ph.label)
+            resolved[ph.key] = Prompt.ask(ph.label)
     return resolved
 
 
@@ -115,9 +124,12 @@ def list_tools() -> None:
     async def _run() -> None:
         client = _make_client()
         tools = await client.list_tools()
+        table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
+        table.add_column("Tool", style="green")
+        table.add_column("Description")
         for tool in tools:
-            desc = tool.description or ""
-            typer.echo(f"{tool.name:<28}{desc}")
+            table.add_row(tool.name, tool.description or "")
+        console.print(table)
 
     asyncio.run(_run())
 
@@ -131,7 +143,7 @@ def ask_cmd(
     overrides: dict[str, str] = {}
     for item in var:
         if "=" not in item:
-            typer.echo(f"Warning: ignoring --var '{item}' (no '=' found)")
+            console.print(f"[yellow]Warning:[/yellow] ignoring --var '{item}' (no '=' found)")
             continue
         key, _, value = item.partition("=")
         overrides[key.strip()] = value
@@ -139,19 +151,19 @@ def ask_cmd(
     config_obj = _load_config(config)
 
     if not config_obj.user_prompt:
-        typer.echo("Error: config missing required field 'user_prompt'")
+        console.print("[bold red]Error:[/bold red] config missing required field 'user_prompt'")
         raise typer.Exit(1)
 
     placeholder_keys = {p.key for p in config_obj.placeholders}
     for key in overrides:
         if key not in placeholder_keys:
-            typer.echo(f"Warning: --var key '{key}' not found in placeholders, ignoring.")
+            console.print(f"[yellow]Warning:[/yellow] --var key '{key}' not found in placeholders, ignoring.")
 
     resolved = _resolve_placeholders(config_obj, overrides)
     question = _render_template(config_obj.user_prompt, resolved)
     system_prompt = _render_template(config_obj.system_prompt, resolved)
 
-    async def _run() -> None:
+    async def _run() -> str:
         from navdoc.exceptions import MissingAnthropicKeyError, NavdocError
 
         try:
@@ -162,18 +174,20 @@ def ask_cmd(
                 tools=config_obj.tools,
             )
         except MissingAnthropicKeyError:
-            typer.echo(
-                "Error: ANTHROPIC_API_KEY is not set.\n"
+            console.print(
+                "[bold red]Error:[/bold red] ANTHROPIC_API_KEY is not set.\n"
                 "Export it with: export ANTHROPIC_API_KEY=sk-ant-..."
             )
             raise typer.Exit(1)
         except (NavdocError, ValueError) as e:
-            typer.echo(f"Error: {e}")
+            console.print(f"[bold red]Error:[/bold red] {e}")
             raise typer.Exit(1)
+        return response.answer
 
-        typer.echo(response.answer)
+    with console.status("Thinking…"):
+        answer = asyncio.run(_run())
 
-    asyncio.run(_run())
+    console.print(Markdown(answer))
 
 
 @app.command("chat")
@@ -188,7 +202,7 @@ def chat_cmd(
     overrides: dict[str, str] = {}
     for item in var:
         if "=" not in item:
-            typer.echo(f"Warning: ignoring --var '{item}' (no '=' found)")
+            console.print(f"[yellow]Warning:[/yellow] ignoring --var '{item}' (no '=' found)")
             continue
         key, _, value = item.partition("=")
         overrides[key.strip()] = value
@@ -198,9 +212,10 @@ def chat_cmd(
     placeholder_keys = {p.key for p in config_obj.placeholders}
     for key in overrides:
         if key not in placeholder_keys:
-            typer.echo(f"Warning: --var key '{key}' not found in placeholders, ignoring.")
+            console.print(f"[yellow]Warning:[/yellow] --var key '{key}' not found in placeholders, ignoring.")
 
-    typer.echo("Chat started. Type 'exit' or press Ctrl+C to quit.\n")
+    console.print(Rule("navdoc chat"))
+    console.print("[dim]Chat started. Type 'exit' or press Ctrl+C to quit.[/dim]\n")
 
     history: list = []
 
@@ -216,40 +231,48 @@ def chat_cmd(
                 tools=config_obj.tools,
             )
         except MissingAnthropicKeyError:
-            typer.echo(
-                "Error: ANTHROPIC_API_KEY is not set.\n"
+            console.print(
+                "[bold red]Error:[/bold red] ANTHROPIC_API_KEY is not set.\n"
                 "Export it with: export ANTHROPIC_API_KEY=sk-ant-..."
             )
             raise typer.Exit(1)
         except (NavdocError, ValueError) as e:
-            typer.echo(f"Error: {e}")
+            console.print(f"[bold red]Error:[/bold red] {e}")
             raise typer.Exit(1)
         return response.answer
 
     def turn(question: str) -> None:
-        answer = asyncio.run(_send(question))
-        typer.echo(f"\nClaude: {answer}\n")
+        status = console.status("Thinking…")
+        status.start()
+        try:
+            answer = asyncio.run(_send(question))
+        finally:
+            status.stop()
+        console.print(Panel(Markdown(answer), title="Claude", border_style="cyan"))
         history.append({"role": "user", "content": question})
         history.append({"role": "assistant", "content": answer})
 
-    if config_obj.user_prompt and not no_initial_message:
-        resolved = _resolve_placeholders(config_obj, overrides)
-        question = _render_template(config_obj.user_prompt, resolved)
-        typer.echo(f"You: {question}")
-        turn(question)
+    try:
+        if config_obj.user_prompt and not no_initial_message:
+            resolved = _resolve_placeholders(config_obj, overrides)
+            question = _render_template(config_obj.user_prompt, resolved)
+            console.print(f"[bold green]You:[/bold green] {question}")
+            turn(question)
 
-    while True:
-        try:
-            user_input = typer.prompt("You")
-        except (KeyboardInterrupt, EOFError):
-            typer.echo("\nBye.")
-            break
-        if user_input.strip().lower() in {"exit", "quit"}:
-            typer.echo("Bye.")
-            break
-        if not user_input.strip():
-            continue
-        turn(user_input)
+        while True:
+            try:
+                user_input = Prompt.ask("[bold green]You[/bold green]")
+            except (KeyboardInterrupt, EOFError):
+                console.print("\n[dim]Bye.[/dim]")
+                break
+            if user_input.strip().lower() in {"exit", "quit"}:
+                console.print("[dim]Bye.[/dim]")
+                break
+            if not user_input.strip():
+                continue
+            turn(user_input)
+    finally:
+        console.show_cursor(True)
 
 
 def main() -> None:
