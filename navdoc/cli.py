@@ -218,7 +218,7 @@ def chat_cmd(
             console.print(f"[yellow]Warning:[/yellow] --var key '{key}' not found in placeholders, ignoring.")
 
     console.print(Rule("navdoc chat"))
-    console.print("[dim]Chat started. Type 'exit' or press Ctrl+C to quit.[/dim]\n")
+    console.print("[dim]Chat started. Press Alt+Enter (or Esc then Enter) to send. Type 'exit' or press Ctrl+C to quit.[/dim]\n")
 
     history: list = []
 
@@ -266,7 +266,12 @@ def chat_cmd(
 
         while True:
             try:
-                user_input = pt_prompt(HTML("<b><ansigreen>You</ansigreen></b>: "), history=input_history)
+                user_input = pt_prompt(
+                    HTML("<b><ansigreen>You</ansigreen></b>: "),
+                    history=input_history,
+                    multiline=True,
+                    prompt_continuation="... ",
+                )
             except (KeyboardInterrupt, EOFError):
                 console.print("\n[dim]Bye.[/dim]")
                 break
