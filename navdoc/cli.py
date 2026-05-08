@@ -8,6 +8,7 @@ import typer
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.key_binding import KeyBindings
 from rich import box
 from rich.console import Console
 from rich.markdown import Markdown
@@ -218,7 +219,7 @@ def chat_cmd(
             console.print(f"[yellow]Warning:[/yellow] --var key '{key}' not found in placeholders, ignoring.")
 
     console.print(Rule("navdoc chat"))
-    console.print("[dim]Chat started. Press Alt+Enter (or Esc then Enter) to send. Type 'exit' or press Ctrl+C to quit.[/dim]\n")
+    console.print("[dim]Chat started. Press Enter to send, Shift+Enter for newline. Type 'exit' or Ctrl+C to quit.[/dim]\n")
 
     history: list = []
 
@@ -257,6 +258,16 @@ def chat_cmd(
 
     input_history = InMemoryHistory()
 
+    _kb = KeyBindings()
+
+    @_kb.add("enter")
+    def _submit(event):
+        event.current_buffer.validate_and_handle()
+
+    @_kb.add("s-enter")
+    def _newline(event):
+        event.current_buffer.insert_text("\n")
+
     try:
         if config_obj.user_prompt and not no_initial_message:
             resolved = _resolve_placeholders(config_obj, overrides)
@@ -271,6 +282,7 @@ def chat_cmd(
                     history=input_history,
                     multiline=True,
                     prompt_continuation="... ",
+                    key_bindings=_kb,
                 )
             except (KeyboardInterrupt, EOFError):
                 console.print("\n[dim]Bye.[/dim]")
