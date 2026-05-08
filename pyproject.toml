@@ -1,6 +1,6 @@
 [project]
 name = "navdoc"
-version = "0.1.3"
+version = "0.1.4"
 description = "Python SDK for navdoc – MCP-powered RAG chat with Claude"
 readme = "README.md"
 license = { text = "MIT" }

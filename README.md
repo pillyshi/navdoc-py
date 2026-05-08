@@ -28,6 +28,21 @@ List all MCP tools exposed by the navdoc server.
 navdoc list-tools
 ```
 
+### `navdoc invoke`
+
+Invoke an MCP tool directly and print the result as JSON.
+
+```bash
+# Call a tool with JSON arguments
+navdoc invoke semantic_search '{"query": "asyncio", "top_k": 5}'
+
+# Call a tool with no arguments
+navdoc invoke ping
+
+# Show the tool's schema (fetched live from the MCP server)
+navdoc invoke semantic_search --help
+```
+
 ### `navdoc ask`
 
 Run a one-shot query defined by a JSON config file.

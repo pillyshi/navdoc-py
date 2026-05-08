@@ -51,6 +51,29 @@ def _make_client() -> "NavdocClient":  # noqa: F821
     return NavdocClient()
 
 
+def _display_tool_help(tool: "mcp_types.Tool") -> None:  # noqa: F821
+    console.print(f"[bold]Tool:[/bold] {tool.name}")
+    console.print(f"[bold]Description:[/bold] {tool.description or '(no description)'}\n")
+    props = tool.inputSchema.get("properties", {})
+    required = tool.inputSchema.get("required", [])
+    if not props:
+        console.print("[dim]Parameters: (none)[/dim]")
+        return
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
+    table.add_column("Parameter", style="green")
+    table.add_column("Type")
+    table.add_column("Required")
+    table.add_column("Description")
+    for name, schema in props.items():
+        table.add_row(
+            name,
+            schema.get("type", ""),
+            "required" if name in required else "optional",
+            schema.get("description", ""),
+        )
+    console.print(table)
+
+
 def _read_json(path: Path) -> dict:
     try:
         text = path.read_text(encoding="utf-8")
@@ -136,6 +159,71 @@ def list_tools() -> None:
         console.print(table)
 
     asyncio.run(_run())
+
+
+@app.command("invoke", add_help_option=False)
+def invoke_cmd(
+    ctx: typer.Context,
+    tool_name: str | None = typer.Argument(None, help="Name of the MCP tool to invoke."),
+    arguments_json: str | None = typer.Argument(
+        None, help="Arguments as a JSON string (e.g. '{\"query\": \"foo\"}')."
+    ),
+    show_help: bool = typer.Option(
+        False, "--help", "-h", is_eager=False, help="Show help message and exit."
+    ),
+) -> None:
+    """Invoke an MCP tool directly and print the result as JSON."""
+
+    if tool_name is None:
+        typer.echo(ctx.get_help())
+        raise typer.Exit(0)
+
+    if show_help:
+
+        async def _run_help() -> None:
+            from navdoc.exceptions import MCPError, NavdocError
+
+            try:
+                client = _make_client()
+                tools = await client.list_tools()
+            except (MCPError, NavdocError, ValueError) as e:
+                console.print(f"[bold red]Error:[/bold red] {e}")
+                raise typer.Exit(1)
+
+            matched = next((t for t in tools if t.name == tool_name), None)
+            if matched is None:
+                console.print(f"[bold red]Error:[/bold red] tool '{tool_name}' not found.")
+                console.print("[dim]Run 'navdoc list-tools' to see available tools.[/dim]")
+                raise typer.Exit(1)
+            _display_tool_help(matched)
+
+        asyncio.run(_run_help())
+        return
+
+    if arguments_json is None:
+        args: dict = {}
+    else:
+        try:
+            args = json.loads(arguments_json)
+        except json.JSONDecodeError as e:
+            console.print(f"[bold red]Error:[/bold red] invalid JSON: {e}")
+            raise typer.Exit(1)
+        if not isinstance(args, dict):
+            console.print("[bold red]Error:[/bold red] arguments must be a JSON object")
+            raise typer.Exit(1)
+
+    async def _run_invoke() -> None:
+        from navdoc.exceptions import MCPError, NavdocError
+
+        try:
+            client = _make_client()
+            results = await client.call_tool(tool_name, args)
+        except (MCPError, NavdocError, ValueError) as e:
+            console.print(f"[bold red]Error:[/bold red] {e}")
+            raise typer.Exit(1)
+        console.print_json(json.dumps(results))
+
+    asyncio.run(_run_invoke())
 
 
 @app.command("ask")
