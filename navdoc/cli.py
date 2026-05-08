@@ -200,7 +200,7 @@ def chat_cmd(
         if key not in placeholder_keys:
             typer.echo(f"Warning: --var key '{key}' not found in placeholders, ignoring.")
 
-    typer.echo("チャットを開始します。終了するには exit または Ctrl+C を入力してください。\n")
+    typer.echo("Chat started. Type 'exit' or press Ctrl+C to quit.\n")
 
     history: list = []
 
@@ -242,10 +242,10 @@ def chat_cmd(
         try:
             user_input = typer.prompt("You")
         except (KeyboardInterrupt, EOFError):
-            typer.echo("\n終了します。")
+            typer.echo("\nBye.")
             break
         if user_input.strip().lower() in {"exit", "quit"}:
-            typer.echo("終了します。")
+            typer.echo("Bye.")
             break
         if not user_input.strip():
             continue
