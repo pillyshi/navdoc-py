@@ -11,7 +11,7 @@ pip install navdoc
 ## Credentials
 
 ```bash
-export NAVDOC_API_KEY=wf_...
+export NAVDOC_API_KEY=nd_...
 ```
 
 ## CLI
@@ -83,7 +83,7 @@ navdoc chat --config qa.json --no-initial-message
 from navdoc import NavdocClient
 
 client = NavdocClient(
-    api_key="wf_...",  # or NAVDOC_API_KEY env var
+    api_key="nd_...",  # or NAVDOC_API_KEY env var
 )
 ```
 
