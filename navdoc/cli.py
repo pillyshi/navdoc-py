@@ -112,39 +112,52 @@ def _render_template(template: str, values: dict[str, str]) -> str:
 
 @app.command("ask")
 def ask_cmd(
-    config: Path = typer.Option(..., "--config", help="Path to config JSON file."),
+    question: str | None = typer.Argument(None, help="Question to ask directly."),
+    config: Path | None = typer.Option(None, "--config", help="Path to config JSON file."),
     var: list[str] = typer.Option([], help="Placeholder value as key=value."),
+    system_prompt_opt: str = typer.Option("", "--system-prompt", help="System prompt (used without --config)."),
 ) -> None:
-    """Run a one-shot ask query defined by a config JSON file."""
-    overrides: dict[str, str] = {}
-    for item in var:
-        if "=" not in item:
-            console.print(f"[yellow]Warning:[/yellow] ignoring --var '{item}' (no '=' found)")
-            continue
-        key, _, value = item.partition("=")
-        overrides[key.strip()] = value
-
-    config_obj = _load_config(config)
-
-    if not config_obj.user_prompt:
-        console.print("[bold red]Error:[/bold red] config missing required field 'user_prompt'")
+    """Run a one-shot ask query."""
+    if question is not None and config is not None:
+        console.print("[bold red]Error:[/bold red] cannot use both QUESTION argument and --config.")
+        raise typer.Exit(1)
+    if question is None and config is None:
+        console.print("[bold red]Error:[/bold red] provide a QUESTION argument or --config.")
         raise typer.Exit(1)
 
-    placeholder_keys = {p.key for p in config_obj.placeholders}
-    for key in overrides:
-        if key not in placeholder_keys:
-            console.print(f"[yellow]Warning:[/yellow] --var key '{key}' not found in placeholders, ignoring.")
+    if question is not None:
+        final_question = question
+        final_system_prompt = system_prompt_opt
+    else:
+        overrides: dict[str, str] = {}
+        for item in var:
+            if "=" not in item:
+                console.print(f"[yellow]Warning:[/yellow] ignoring --var '{item}' (no '=' found)")
+                continue
+            key, _, value = item.partition("=")
+            overrides[key.strip()] = value
 
-    resolved = _resolve_placeholders(config_obj, overrides)
-    question = _render_template(config_obj.user_prompt, resolved)
-    system_prompt = _render_template(config_obj.system_prompt, resolved)
+        config_obj = _load_config(config)  # type: ignore[arg-type]
+
+        if not config_obj.user_prompt:
+            console.print("[bold red]Error:[/bold red] config missing required field 'user_prompt'")
+            raise typer.Exit(1)
+
+        placeholder_keys = {p.key for p in config_obj.placeholders}
+        for key in overrides:
+            if key not in placeholder_keys:
+                console.print(f"[yellow]Warning:[/yellow] --var key '{key}' not found in placeholders, ignoring.")
+
+        resolved = _resolve_placeholders(config_obj, overrides)
+        final_question = _render_template(config_obj.user_prompt, resolved)
+        final_system_prompt = _render_template(config_obj.system_prompt, resolved)
 
     async def _run() -> None:
         from navdoc.exceptions import NavdocError
 
         try:
             client = _make_client()
-            async for event in client.stream(question, system_prompt=system_prompt):
+            async for event in client.stream(final_question, system_prompt=final_system_prompt):
                 if event.type == "text" and event.delta:
                     console.print(event.delta, end="")
             console.print()

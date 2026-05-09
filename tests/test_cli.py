@@ -29,6 +29,40 @@ def write_config(tmp_path: Path, data: dict) -> Path:
 
 # --- ask command ---
 
+def test_ask_direct_question():
+    events = [StreamEvent(type="text", delta="Hello"), StreamEvent(type="done")]
+    mock_client = make_streaming_client(events)
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["ask", "What is asyncio?"])
+    assert result.exit_code == 0
+    assert "Hello" in result.output
+
+
+def test_ask_direct_question_with_system_prompt():
+    captured = {}
+
+    async def _stream(question, *, system_prompt="", **kwargs):
+        captured["system_prompt"] = system_prompt
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.stream = _stream
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        runner.invoke(app, ["ask", "Hello", "--system-prompt", "Be concise."])
+    assert captured.get("system_prompt") == "Be concise."
+
+
+def test_ask_no_args_errors():
+    result = runner.invoke(app, ["ask"])
+    assert result.exit_code == 1
+
+
+def test_ask_question_and_config_errors(tmp_path):
+    config = write_config(tmp_path, {"name": "T", "description": "d", "system_prompt": "s", "user_prompt": "q"})
+    result = runner.invoke(app, ["ask", "hello", "--config", str(config)])
+    assert result.exit_code == 1
+
+
 def test_ask_streams_text(tmp_path):
     config = write_config(tmp_path, {
         "name": "Test",

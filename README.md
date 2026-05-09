@@ -18,9 +18,14 @@ export NAVDOC_API_KEY=wf_...
 
 ### `navdoc ask`
 
-Run a one-shot query defined by a JSON config file.
+Run a one-shot query.
 
 ```bash
+# Direct question
+navdoc ask "What is asyncio?"
+navdoc ask "What is asyncio?" --system-prompt "Be concise."
+
+# Config-based
 navdoc ask --config daily.json
 navdoc ask --config daily.json --var date=2025-05-08
 ```
