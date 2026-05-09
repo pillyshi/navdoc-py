@@ -1,6 +1,9 @@
 # Environment
 .env
 
+# Lock file (library — consumers manage their own)
+uv.lock
+
 # Claude Code
 CLAUDE.md
 
