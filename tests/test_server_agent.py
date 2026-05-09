@@ -10,8 +10,8 @@ from navdoc.rest import NavdocREST
 
 @pytest.fixture
 def client():
-    with patch("navdoc.client.NavdocTools"), patch("navdoc.client.NavdocREST"):
-        return NavdocClient(api_key="wf_test", account_id="acc_test")
+    with patch("navdoc.client.NavdocREST"):
+        return NavdocClient(api_key="wf_test")
 
 
 def make_sse_lines(*events: dict) -> list[str]:

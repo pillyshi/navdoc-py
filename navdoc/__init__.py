@@ -1,12 +1,6 @@
 from .client import NavdocClient
 from .models import AgentResponse, ToolCall, Document, Scope, StreamEvent
-from .exceptions import (
-    NavdocError,
-    AuthError,
-    MissingAnthropicKeyError,
-    MCPError,
-    MaxIterationsError,
-)
+from .exceptions import NavdocError, AuthError
 
 __all__ = [
     "NavdocClient",
@@ -17,7 +11,4 @@ __all__ = [
     "StreamEvent",
     "NavdocError",
     "AuthError",
-    "MissingAnthropicKeyError",
-    "MCPError",
-    "MaxIterationsError",
 ]

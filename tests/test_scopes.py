@@ -6,8 +6,8 @@ from navdoc import NavdocClient, Scope
 
 @pytest.fixture
 def client():
-    with patch("navdoc.client.NavdocTools"), patch("navdoc.client.NavdocREST"):
-        return NavdocClient(api_key="wf_test", account_id="acc_test")
+    with patch("navdoc.client.NavdocREST"):
+        return NavdocClient(api_key="wf_test")
 
 
 async def test_list_scopes(client):
