@@ -29,6 +29,16 @@ class NavdocREST:
         self._raise_for_status(resp)
         return resp.json()
 
+    async def patch(self, path: str, body: dict) -> dict:
+        async with httpx.AsyncClient() as client:
+            resp = await client.patch(
+                f"{REST_BASE_URL}{path}",
+                headers=self._headers,
+                json={k: v for k, v in body.items() if v is not None},
+            )
+        self._raise_for_status(resp)
+        return resp.json()
+
     async def delete(self, path: str) -> None:
         async with httpx.AsyncClient() as client:
             resp = await client.delete(

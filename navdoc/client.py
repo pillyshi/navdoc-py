@@ -5,7 +5,7 @@ from mcp import types as mcp_types
 
 from .tools import NavdocTools
 from .agent import NavdocAgent
-from .models import AgentResponse, Document
+from .models import AgentResponse, Document, Scope
 from .rest import NavdocREST
 from .exceptions import NavdocError
 
@@ -127,3 +127,23 @@ class NavdocClient:
 
     async def delete_document(self, document_id: str) -> None:
         await self._rest.delete(f"/documents/{document_id}")
+
+    async def list_scopes(self) -> list[Scope]:
+        data = await self._rest.get("/scopes")
+        items = data if isinstance(data, list) else []
+        return [Scope(name=s["name"], visibility=s["visibility"]) for s in items]
+
+    async def create_scope(self, name: str, *, visibility: str = "private") -> Scope:
+        data = await self._rest.post("/scopes", body={"name": name, "visibility": visibility})
+        return Scope(name=data["name"], visibility=data["visibility"])
+
+    async def get_scope(self, name: str) -> Scope:
+        data = await self._rest.get(f"/scopes/{name}")
+        return Scope(name=data["name"], visibility=data["visibility"])
+
+    async def update_scope(self, name: str, *, visibility: str) -> Scope:
+        data = await self._rest.patch(f"/scopes/{name}", body={"visibility": visibility})
+        return Scope(name=data["name"], visibility=data["visibility"])
+
+    async def delete_scope(self, name: str) -> None:
+        await self._rest.delete(f"/scopes/{name}")

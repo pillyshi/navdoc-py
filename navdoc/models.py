@@ -20,3 +20,9 @@ class AgentResponse:
 class Document:
     document_id: str
     chunk_count: int
+
+
+@dataclass
+class Scope:
+    name: str
+    visibility: str  # "private" | "public"

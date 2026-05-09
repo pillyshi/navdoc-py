@@ -58,6 +58,15 @@ async def test_raises_navdoc_error_on_500():
             await rest.get("/documents")
 
 
+async def test_patch_success():
+    rest = NavdocREST("wf_test")
+    mock_resp = make_response(200, {"name": "s1", "visibility": "public"})
+    with patch("navdoc.rest.httpx.AsyncClient") as MockClient:
+        MockClient.return_value.__aenter__.return_value.patch = AsyncMock(return_value=mock_resp)
+        result = await rest.patch("/scopes/s1", body={"visibility": "public"})
+    assert result == {"name": "s1", "visibility": "public"}
+
+
 async def test_none_params_excluded():
     rest = NavdocREST("wf_test")
     mock_resp = make_response(200, [])

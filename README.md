@@ -248,6 +248,38 @@ class Document:
     chunk_count: int
 ```
 
+### Scope management
+
+Scopes are namespaces that group documents. Manage them programmatically via the navdoc REST API.
+
+```python
+from navdoc import NavdocClient, Scope
+
+# List all scopes
+scopes = await client.list_scopes()
+
+# Create a scope
+scope = await client.create_scope("my-scope", visibility="private")
+
+# Get a scope
+scope = await client.get_scope("my-scope")
+
+# Change visibility
+scope = await client.update_scope("my-scope", visibility="public")
+
+# Delete a scope (also removes all documents inside)
+await client.delete_scope("my-scope")
+```
+
+#### `Scope` type
+
+```python
+@dataclass
+class Scope:
+    name: str
+    visibility: str  # "private" | "public"
+```
+
 ## Development
 
 ```bash
