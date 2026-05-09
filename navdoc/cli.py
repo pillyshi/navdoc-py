@@ -157,27 +157,32 @@ def ask_cmd(
 
 @app.command("chat")
 def chat_cmd(
-    config: Path = typer.Option(..., "--config", help="Path to config JSON file."),
+    config: Path | None = typer.Option(None, "--config", help="Path to config JSON file."),
     var: list[str] = typer.Option([], help="Placeholder value as key=value."),
+    system_prompt_opt: str = typer.Option("", "--system-prompt", help="System prompt (used when --config is not provided)."),
     no_initial_message: bool = typer.Option(
         False, "--no-initial-message", help="Do not send user_prompt as the first message."
     ),
 ) -> None:
     """Start an interactive multi-turn chat session."""
-    overrides: dict[str, str] = {}
-    for item in var:
-        if "=" not in item:
-            console.print(f"[yellow]Warning:[/yellow] ignoring --var '{item}' (no '=' found)")
-            continue
-        key, _, value = item.partition("=")
-        overrides[key.strip()] = value
+    if config is not None:
+        overrides: dict[str, str] = {}
+        for item in var:
+            if "=" not in item:
+                console.print(f"[yellow]Warning:[/yellow] ignoring --var '{item}' (no '=' found)")
+                continue
+            key, _, value = item.partition("=")
+            overrides[key.strip()] = value
 
-    config_obj = _load_config(config)
+        config_obj = _load_config(config)
 
-    placeholder_keys = {p.key for p in config_obj.placeholders}
-    for key in overrides:
-        if key not in placeholder_keys:
-            console.print(f"[yellow]Warning:[/yellow] --var key '{key}' not found in placeholders, ignoring.")
+        placeholder_keys = {p.key for p in config_obj.placeholders}
+        for key in overrides:
+            if key not in placeholder_keys:
+                console.print(f"[yellow]Warning:[/yellow] --var key '{key}' not found in placeholders, ignoring.")
+    else:
+        overrides = {}
+        config_obj = AskConfig(name="", description="", system_prompt=system_prompt_opt)
 
     console.print(Rule("navdoc chat"))
     console.print("[dim]Chat started. Press Enter to send, Ctrl+J or Esc+Enter for newline. Type 'exit' or Ctrl+C to quit.[/dim]\n")

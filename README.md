@@ -56,12 +56,19 @@ Config format:
 Start an interactive multi-turn chat session.
 
 ```bash
+# No config — plain chat
+navdoc chat
+
+# With a system prompt
+navdoc chat --system-prompt "You are a helpful assistant."
+
+# With a config file
 navdoc chat --config qa.json
 navdoc chat --config qa.json --var topic=asyncio
 navdoc chat --config qa.json --no-initial-message
 ```
 
-Uses the same config format as `ask`. If `user_prompt` is set, it is sent as the first message automatically (`--no-initial-message` suppresses this). Type `exit` or press Ctrl+C to quit.
+`--config` is optional. If omitted, chat starts immediately with an empty (or `--system-prompt`-specified) prompt. If `user_prompt` is set in the config, it is sent as the first message automatically (`--no-initial-message` suppresses this). Type `exit` or press Ctrl+C to quit.
 
 ## Python SDK
 

@@ -116,3 +116,17 @@ def test_chat_no_initial_message_flag(tmp_path):
     with patch("navdoc.cli._make_client", return_value=mock_client):
         result = runner.invoke(app, ["chat", "--config", str(config), "--no-initial-message"], input="\x04")
     assert result.exit_code == 0
+
+
+def test_chat_without_config():
+    mock_client = make_streaming_client([])
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["chat"], input="\x04")
+    assert result.exit_code == 0
+
+
+def test_chat_without_config_with_system_prompt():
+    mock_client = make_streaming_client([])
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["chat", "--system-prompt", "Be concise."], input="\x04")
+    assert result.exit_code == 0
