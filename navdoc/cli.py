@@ -11,8 +11,6 @@ from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
 from rich import box
 from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
@@ -34,7 +32,6 @@ class AskConfig:
     system_prompt: str
     user_prompt: str | None = None
     placeholders: list[Placeholder] = field(default_factory=list)
-    tools: list[str] | None = None
 
 
 app = typer.Typer(no_args_is_help=True)
@@ -110,18 +107,12 @@ def _load_config(path: Path) -> AskConfig:
             )
         )
 
-    tools = data.get("tools")
-    if tools is not None and not isinstance(tools, list):
-        console.print("[yellow]Warning:[/yellow] 'tools' must be a list, ignoring.")
-        tools = None
-
     return AskConfig(
         name=data.get("name", ""),
         description=data.get("description", ""),
         system_prompt=data.get("system_prompt", ""),
         user_prompt=data.get("user_prompt"),
         placeholders=placeholders,
-        tools=tools,
     )
 
 
@@ -255,31 +246,20 @@ def ask_cmd(
     question = _render_template(config_obj.user_prompt, resolved)
     system_prompt = _render_template(config_obj.system_prompt, resolved)
 
-    async def _run() -> str:
-        from navdoc.exceptions import MissingAnthropicKeyError, NavdocError
+    async def _run() -> None:
+        from navdoc.exceptions import NavdocError
 
         try:
             client = _make_client()
-            response = await client.ask(
-                question,
-                system_prompt=system_prompt,
-                tools=config_obj.tools,
-            )
-        except MissingAnthropicKeyError:
-            console.print(
-                "[bold red]Error:[/bold red] ANTHROPIC_API_KEY is not set.\n"
-                "Export it with: export ANTHROPIC_API_KEY=sk-ant-..."
-            )
-            raise typer.Exit(1)
+            async for event in client.stream(question, system_prompt=system_prompt):
+                if event.type == "text" and event.delta:
+                    console.print(event.delta, end="")
+            console.print()
         except (NavdocError, ValueError) as e:
             console.print(f"[bold red]Error:[/bold red] {e}")
             raise typer.Exit(1)
-        return response.answer
 
-    with console.status("Thinking…"):
-        answer = asyncio.run(_run())
-
-    console.print(Markdown(answer))
+    asyncio.run(_run())
 
 
 @app.command("chat")
@@ -312,35 +292,28 @@ def chat_cmd(
     history: list = []
 
     async def _send(question: str) -> str:
-        from navdoc.exceptions import MissingAnthropicKeyError, NavdocError
+        from navdoc.exceptions import NavdocError
 
         try:
             client = _make_client()
-            response = await client.ask(
+            text_parts: list[str] = []
+            console.print("[bold cyan]Claude:[/bold cyan] ", end="")
+            async for event in client.stream(
                 question,
                 messages=history,
                 system_prompt=config_obj.system_prompt,
-                tools=config_obj.tools,
-            )
-        except MissingAnthropicKeyError:
-            console.print(
-                "[bold red]Error:[/bold red] ANTHROPIC_API_KEY is not set.\n"
-                "Export it with: export ANTHROPIC_API_KEY=sk-ant-..."
-            )
-            raise typer.Exit(1)
+            ):
+                if event.type == "text" and event.delta:
+                    console.print(event.delta, end="")
+                    text_parts.append(event.delta)
+            console.print()
+            return "".join(text_parts)
         except (NavdocError, ValueError) as e:
-            console.print(f"[bold red]Error:[/bold red] {e}")
+            console.print(f"\n[bold red]Error:[/bold red] {e}")
             raise typer.Exit(1)
-        return response.answer
 
     def turn(question: str) -> None:
-        status = console.status("Thinking…")
-        status.start()
-        try:
-            answer = asyncio.run(_send(question))
-        finally:
-            status.stop()
-        console.print(Panel(Markdown(answer), title="Claude", border_style="cyan"))
+        answer = asyncio.run(_send(question))
         history.append({"role": "user", "content": question})
         history.append({"role": "assistant", "content": answer})
 

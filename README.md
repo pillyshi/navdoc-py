@@ -15,7 +15,7 @@ Set environment variables (or pass directly to `NavdocClient`):
 ```bash
 export NAVDOC_API_KEY=wf_...
 export NAVDOC_ACCOUNT_ID=...
-export ANTHROPIC_API_KEY=sk-ant-...   # required for ask() and the CLI ask/chat commands
+export ANTHROPIC_API_KEY=sk-ant-...   # required only for the SDK ask() method
 ```
 
 ## CLI
@@ -71,17 +71,12 @@ Config format:
       "label": "Response language",
       "default": "English"
     }
-  ],
-  "tools": [
-    "list_documents_by_date",
-    "get_current_time"
   ]
 }
 ```
 
 - Both `system_prompt` and `user_prompt` support `{{key}}` placeholders.
 - If `--var key=value` is not provided, missing placeholders are prompted interactively (unless a `default` is set).
-- `tools` is optional. Omit to allow all available tools.
 
 ### `navdoc chat`
 
@@ -107,12 +102,6 @@ Config format:
       "label": "Response language",
       "default": "English"
     }
-  ],
-  "tools": [
-    "get_current_time",
-    "semantic_search",
-    "keyword_search",
-    "add_document"
   ]
 }
 ```
