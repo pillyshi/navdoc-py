@@ -176,6 +176,7 @@ from navdoc import NavdocClient, StreamEvent
 
 async for event in client.stream(
     "What is asyncio?",
+    messages=[...],            # optional conversation history
     system_prompt="Answer concisely.",
     timezone="Asia/Tokyo",
 ):
