@@ -280,6 +280,53 @@ class Scope:
     visibility: str  # "private" | "public"
 ```
 
+### Server-side agent
+
+Use the navdoc server's built-in Claude agent without your own Anthropic API key.
+
+#### `stream()` — streaming
+
+Yields `StreamEvent` objects as the server sends them.
+
+```python
+from navdoc import NavdocClient, StreamEvent
+
+async for event in client.stream(
+    "What is asyncio?",
+    system_prompt="Answer concisely.",
+    timezone="Asia/Tokyo",
+):
+    if event.type == "text":
+        print(event.delta, end="", flush=True)
+```
+
+#### `ask_server()` — non-streaming
+
+Collects the full response and returns an `AgentResponse`.
+
+```python
+response = await client.ask_server(
+    "What is asyncio?",
+    messages=[{"role": "user", "content": "previous turn"}, ...],  # optional history
+    system_prompt="Answer concisely.",
+    timezone="Asia/Tokyo",
+)
+print(response.answer)
+print(response.tool_calls)
+```
+
+#### `StreamEvent` type
+
+```python
+@dataclass
+class StreamEvent:
+    type: str        # "text" | "tool_use" | "tool_result" | "done" | "error"
+    delta: str | None = None    # type=text
+    name: str | None = None     # type=tool_use, tool_result
+    input: dict | None = None   # type=tool_use, tool_result
+    message: str | None = None  # type=error
+```
+
 ## Development
 
 ```bash

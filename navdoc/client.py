@@ -1,11 +1,12 @@
 import os
+from collections.abc import AsyncGenerator
 
 from anthropic.types import MessageParam
 from mcp import types as mcp_types
 
 from .tools import NavdocTools
 from .agent import NavdocAgent
-from .models import AgentResponse, Document, Scope
+from .models import AgentResponse, Document, Scope, StreamEvent, ToolCall
 from .rest import NavdocREST
 from .exceptions import NavdocError
 
@@ -147,3 +148,59 @@ class NavdocClient:
 
     async def delete_scope(self, name: str) -> None:
         await self._rest.delete(f"/scopes/{name}")
+
+    async def stream(
+        self,
+        question: str,
+        *,
+        messages: list[dict] | None = None,
+        timezone: str | None = None,
+        system_prompt: str = "",
+    ) -> AsyncGenerator[StreamEvent, None]:
+        all_messages = list(messages or []) + [{"role": "user", "content": question}]
+        async for raw in self._rest.stream_post("/agent", body={
+            "messages": all_messages,
+            "timezone": timezone,
+            "system_prompt": system_prompt or None,
+        }):
+            event = StreamEvent(
+                type=raw["type"],
+                delta=raw.get("delta"),
+                name=raw.get("name"),
+                input=raw.get("input"),
+                message=raw.get("message"),
+            )
+            if event.type == "error":
+                raise NavdocError(event.message or "Server error")
+            yield event
+
+    async def ask_server(
+        self,
+        question: str,
+        *,
+        messages: list[dict] | None = None,
+        timezone: str | None = None,
+        system_prompt: str = "",
+    ) -> AgentResponse:
+        text_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        async for event in self.stream(
+            question,
+            messages=messages,
+            timezone=timezone,
+            system_prompt=system_prompt,
+        ):
+            if event.type == "text" and event.delta:
+                text_parts.append(event.delta)
+            elif event.type == "tool_result":
+                tool_calls.append(ToolCall(
+                    name=event.name or "",
+                    input=event.input or {},
+                    output={},
+                ))
+        return AgentResponse(
+            answer="".join(text_parts),
+            tool_calls=tool_calls,
+            model="",
+            usage={},
+        )

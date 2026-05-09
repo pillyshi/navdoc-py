@@ -26,3 +26,12 @@ class Document:
 class Scope:
     name: str
     visibility: str  # "private" | "public"
+
+
+@dataclass
+class StreamEvent:
+    type: str        # "text" | "tool_use" | "tool_result" | "done" | "error"
+    delta: str | None = None    # type=text
+    name: str | None = None     # type=tool_use, tool_result
+    input: dict | None = None   # type=tool_use, tool_result
+    message: str | None = None  # type=error

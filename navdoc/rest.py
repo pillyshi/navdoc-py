@@ -1,3 +1,6 @@
+import json
+from collections.abc import AsyncGenerator
+
 import httpx
 
 from .exceptions import AuthError, NavdocError
@@ -46,6 +49,22 @@ class NavdocREST:
                 headers=self._headers,
             )
         self._raise_for_status(resp)
+
+    async def stream_post(self, path: str, body: dict) -> AsyncGenerator[dict, None]:
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                f"{REST_BASE_URL}{path}",
+                headers={**self._headers, "accept": "text/event-stream"},
+                json={k: v for k, v in body.items() if v is not None},
+            ) as resp:
+                if resp.status_code in (401, 403):
+                    raise AuthError(f"Authentication failed ({resp.status_code})")
+                if resp.status_code >= 400:
+                    raise NavdocError(f"API error {resp.status_code}")
+                async for line in resp.aiter_lines():
+                    if line.startswith("data: "):
+                        yield json.loads(line[6:])
 
     def _raise_for_status(self, resp: httpx.Response) -> None:
         if resp.status_code in (401, 403):
