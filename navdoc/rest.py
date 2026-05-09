@@ -51,7 +51,7 @@ class NavdocREST:
         self._raise_for_status(resp)
 
     async def stream_post(self, path: str, body: dict) -> AsyncGenerator[dict, None]:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=None)) as client:
             async with client.stream(
                 "POST",
                 f"{REST_BASE_URL}{path}",
