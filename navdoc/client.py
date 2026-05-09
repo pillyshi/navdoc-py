@@ -5,7 +5,8 @@ from mcp import types as mcp_types
 
 from .tools import NavdocTools
 from .agent import NavdocAgent
-from .models import AgentResponse
+from .models import AgentResponse, Document
+from .rest import NavdocREST
 from .exceptions import NavdocError
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -34,6 +35,7 @@ class NavdocClient:
             )
 
         self._tools = NavdocTools(self._api_key, self._account_id)
+        self._rest = NavdocREST(self._api_key)
 
     async def list_tools(self) -> list[mcp_types.Tool]:
         return await self._tools.list_tools()
@@ -81,3 +83,47 @@ class NavdocClient:
             temperature=temperature,
             max_iterations=max_iterations,
         )
+
+    async def list_documents(
+        self,
+        *,
+        scope: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Document]:
+        data = await self._rest.get(
+            "/documents",
+            params={"scope": scope, "limit": limit, "offset": offset},
+        )
+        items = data if isinstance(data, list) else data.get("items", data.get("documents", []))
+        return [Document(document_id=d["document_id"], chunk_count=d["chunk_count"]) for d in items]
+
+    async def upload_document(
+        self,
+        content: str,
+        *,
+        url: str,
+        scope: str | None = None,
+        created_at: str | None = None,
+    ) -> Document:
+        data = await self._rest.post(
+            "/documents",
+            body={"content": content, "url": url, "scope": scope, "created_at": created_at},
+        )
+        return Document(document_id=data["document_id"], chunk_count=data["chunk_count"])
+
+    async def upload_chunks(
+        self,
+        chunks: list[str],
+        *,
+        document_url: str,
+        scope: str | None = None,
+    ) -> list[str]:
+        data = await self._rest.post(
+            "/documents/chunks",
+            body={"chunks": chunks, "document_url": document_url, "scope": scope},
+        )
+        return data["chunk_ids"]
+
+    async def delete_document(self, document_id: str) -> None:
+        await self._rest.delete(f"/documents/{document_id}")

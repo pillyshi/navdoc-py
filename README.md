@@ -1,6 +1,6 @@
 # navdoc-py
 
-Python SDK and CLI for [navdoc](https://dashboard.navdoc.dev). Connects to navdoc's MCP server and uses the Anthropic API (Claude) to provide RAG-powered chat over your documents.
+Python SDK and CLI for [navdoc](https://dashboard.navdoc.dev). Upload and manage your documents via the navdoc REST API, and run RAG-powered chat with Claude through the navdoc MCP server.
 
 ## Installation
 
@@ -193,6 +193,59 @@ class AgentResponse:
     tool_calls: list[ToolCall]
     model: str
     usage: dict  # {"input_tokens": int, "output_tokens": int}
+```
+
+### Document management
+
+Upload, list, and delete documents via the navdoc REST API. No Anthropic API key required.
+
+#### `upload_document()`
+
+```python
+from navdoc import NavdocClient, Document
+
+doc = await client.upload_document(
+    "Full text content of the document...",
+    url="https://example.com/page",   # unique identifier for the document
+    scope="my-scope",                 # optional
+)
+print(doc.document_id)  # str
+print(doc.chunk_count)  # int
+```
+
+#### `upload_chunks()`
+
+Upload pre-split chunks instead of raw text (useful when you handle chunking yourself).
+
+```python
+chunk_ids = await client.upload_chunks(
+    ["First chunk...", "Second chunk..."],
+    document_url="https://example.com/page",
+    scope="my-scope",
+)
+```
+
+#### `list_documents()`
+
+```python
+docs = await client.list_documents(scope="my-scope", limit=50, offset=0)
+for doc in docs:
+    print(doc.document_id, doc.chunk_count)
+```
+
+#### `delete_document()`
+
+```python
+await client.delete_document("doc_id_xxx")
+```
+
+#### `Document` type
+
+```python
+@dataclass
+class Document:
+    document_id: str
+    chunk_count: int
 ```
 
 ## Development

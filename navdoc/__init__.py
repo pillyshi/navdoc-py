@@ -1,5 +1,5 @@
 from .client import NavdocClient
-from .models import AgentResponse, ToolCall
+from .models import AgentResponse, ToolCall, Document
 from .exceptions import (
     NavdocError,
     AuthError,
@@ -12,6 +12,7 @@ __all__ = [
     "NavdocClient",
     "AgentResponse",
     "ToolCall",
+    "Document",
     "NavdocError",
     "AuthError",
     "MissingAnthropicKeyError",
