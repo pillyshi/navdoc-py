@@ -209,6 +209,7 @@ def chat_cmd(
             client = _make_client()
             text_parts: list[str] = []
             received_text = False
+            in_tool_call = False
             with console.status("[dim]thinking…[/dim]") as status:
                 async for event in client.stream(
                     question,
@@ -216,12 +217,16 @@ def chat_cmd(
                     system_prompt=config_obj.system_prompt,
                 ):
                     if event.type == "tool_use":
+                        in_tool_call = True
+                        status.update(f"[dim]{event.name or 'searching'}…[/dim]")
                         if received_text:
-                            console.print(f"\n[dim]  ↻ {event.name or 'searching'}…[/dim]")
-                        else:
-                            status.update(f"[dim]{event.name or 'searching'}…[/dim]")
+                            console.print()
+                            status.start()
                     elif event.type == "tool_result":
-                        if not received_text:
+                        in_tool_call = False
+                        if received_text:
+                            status.stop()
+                        else:
                             status.update("[dim]thinking…[/dim]")
                     elif event.type == "text" and event.delta:
                         if not received_text:
