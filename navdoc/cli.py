@@ -208,15 +208,22 @@ def chat_cmd(
         try:
             client = _make_client()
             text_parts: list[str] = []
-            console.print("[bold cyan]Claude:[/bold cyan] ", end="")
-            async for event in client.stream(
-                question,
-                messages=history,
-                system_prompt=config_obj.system_prompt,
-            ):
-                if event.type == "text" and event.delta:
-                    console.print(event.delta, end="")
-                    text_parts.append(event.delta)
+            received_text = False
+            with console.status("[dim]thinking…[/dim]") as status:
+                async for event in client.stream(
+                    question,
+                    messages=history,
+                    system_prompt=config_obj.system_prompt,
+                ):
+                    if event.type == "text" and event.delta:
+                        if not received_text:
+                            status.stop()
+                            console.print("[bold cyan]Claude:[/bold cyan] ", end="")
+                            received_text = True
+                        console.print(event.delta, end="")
+                        text_parts.append(event.delta)
+            if not received_text:
+                console.print("[bold cyan]Claude:[/bold cyan] ", end="")
             console.print()
             return "".join(text_parts)
         except (NavdocError, ValueError) as e:
