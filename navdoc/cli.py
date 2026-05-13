@@ -215,7 +215,15 @@ def chat_cmd(
                     messages=history,
                     system_prompt=config_obj.system_prompt,
                 ):
-                    if event.type == "text" and event.delta:
+                    if event.type == "tool_use":
+                        if received_text:
+                            console.print(f"\n[dim]  ↻ {event.name or 'searching'}…[/dim]")
+                        else:
+                            status.update(f"[dim]{event.name or 'searching'}…[/dim]")
+                    elif event.type == "tool_result":
+                        if not received_text:
+                            status.update("[dim]thinking…[/dim]")
+                    elif event.type == "text" and event.delta:
                         if not received_text:
                             status.stop()
                             console.print("[bold cyan]Claude:[/bold cyan] ", end="")
