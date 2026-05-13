@@ -62,9 +62,12 @@ class NavdocREST:
                     raise AuthError(f"Authentication failed ({resp.status_code})")
                 if resp.status_code >= 400:
                     raise NavdocError(f"API error {resp.status_code}")
-                async for line in resp.aiter_lines():
-                    if line.startswith("data: "):
-                        yield json.loads(line[6:])
+                try:
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data: "):
+                            yield json.loads(line[6:])
+                except httpx.RemoteProtocolError as e:
+                    raise NavdocError(f"Connection closed by server: {e}") from e
 
     def _raise_for_status(self, resp: httpx.Response) -> None:
         if resp.status_code in (401, 403):
