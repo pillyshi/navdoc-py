@@ -399,7 +399,7 @@ def template_list_cmd() -> None:
 
     for t in templates:
         table.add_row(
-            t.id[:8] + "…",
+            t.id,
             t.name,
             str(t.star_count),
             "Y" if t.is_mine else "-",

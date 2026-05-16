@@ -86,7 +86,7 @@ def test_template_list_displays_table():
     with patch("navdoc.cli._make_client", return_value=mock_client):
         result = runner.invoke(app, ["template", "list"])
     assert result.exit_code == 0
-    assert "aaaabbbb" in result.output
+    assert "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb" in result.output
     assert "My Template" in result.output
     assert "3" in result.output
 
