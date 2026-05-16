@@ -35,3 +35,27 @@ class StreamEvent:
     name: str | None = None     # type=tool_use, tool_result
     input: dict | None = None   # type=tool_use, tool_result
     message: str | None = None  # type=error
+
+
+@dataclass
+class TemplatePlaceholder:
+    key: str
+    label: str
+    auto: bool = False
+    default: str | None = None
+
+
+@dataclass
+class AgentTemplate:
+    id: str
+    name: str
+    description: str | None
+    system_prompt: str | None
+    user_prompt: str | None
+    placeholders: list[TemplatePlaceholder]
+    tools: list[str] | None
+    greeting: str | None
+    is_public: bool
+    star_count: int
+    is_starred: bool
+    is_mine: bool

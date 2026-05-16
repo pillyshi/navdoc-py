@@ -164,3 +164,221 @@ def test_chat_without_config_with_system_prompt():
     with patch("navdoc.cli._make_client", return_value=mock_client):
         result = runner.invoke(app, ["chat", "--system-prompt", "Be concise."], input="\x04")
     assert result.exit_code == 0
+
+
+# --- --template option ---
+
+def make_template_client(template, events: list[StreamEvent]):
+    from navdoc.models import AgentTemplate
+
+    async def _get_template(template_id: str):
+        return template
+
+    async def _stream(*args, **kwargs):
+        for event in events:
+            yield event
+
+    client = MagicMock()
+    client.get_template = _get_template
+    client.stream = _stream
+    return client
+
+
+def make_agent_template(
+    template_id="aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb",
+    name="Test Template",
+    system_prompt="Be helpful.",
+    user_prompt="Tell me about {{topic}}",
+    placeholders=None,
+    greeting=None,
+):
+    from navdoc.models import AgentTemplate, TemplatePlaceholder
+
+    if placeholders is None:
+        placeholders = [TemplatePlaceholder(key="topic", label="Topic", default="Python")]
+    return AgentTemplate(
+        id=template_id,
+        name=name,
+        description=None,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        placeholders=placeholders,
+        tools=None,
+        greeting=greeting,
+        is_public=False,
+        star_count=0,
+        is_starred=False,
+        is_mine=True,
+    )
+
+
+def test_ask_template_fetches_and_streams():
+    template = make_agent_template()
+    captured = {}
+
+    async def _get_template(template_id):
+        return template
+
+    async def _stream(*args, **kwargs):
+        captured["template_id"] = kwargs.get("template_id")
+        captured["question"] = args[0] if args else kwargs.get("question")
+        yield StreamEvent(type="text", delta="Answer")
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.get_template = _get_template
+    mock_client.stream = _stream
+
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["ask", "--template", template.id])
+
+    assert result.exit_code == 0
+    assert "Answer" in result.output
+    assert captured["template_id"] == template.id
+    assert "Python" in captured["question"]
+
+
+def test_ask_template_var_override():
+    template = make_agent_template()
+    captured = {}
+
+    async def _get_template(template_id):
+        return template
+
+    async def _stream(*args, **kwargs):
+        captured["question"] = args[0] if args else kwargs.get("question")
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.get_template = _get_template
+    mock_client.stream = _stream
+
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        runner.invoke(app, ["ask", "--template", template.id, "--var", "topic=Rust"])
+
+    assert captured.get("question") == "Tell me about Rust"
+
+
+def test_ask_template_auto_placeholder_skipped():
+    from navdoc.models import AgentTemplate, TemplatePlaceholder
+
+    template = make_agent_template(
+        user_prompt="Hello world",
+        placeholders=[TemplatePlaceholder(key="ctx", label="Context", auto=True)],
+    )
+    prompted = []
+
+    async def _get_template(template_id):
+        return template
+
+    async def _stream(*args, **kwargs):
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.get_template = _get_template
+    mock_client.stream = _stream
+
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        with patch("navdoc.cli.Prompt.ask", side_effect=lambda label: prompted.append(label) or ""):
+            result = runner.invoke(app, ["ask", "--template", template.id])
+
+    assert result.exit_code == 0
+    assert "ctx" not in [p for p in prompted]
+
+
+def test_ask_template_and_config_mutually_exclusive(tmp_path):
+    config = write_config(tmp_path, {"name": "T", "description": "d", "system_prompt": "s", "user_prompt": "q"})
+    result = runner.invoke(app, ["ask", "--config", str(config), "--template", "some-uuid"])
+    assert result.exit_code == 1
+    assert "mutually exclusive" in result.output
+
+
+def test_ask_template_and_question_mutually_exclusive():
+    result = runner.invoke(app, ["ask", "hello", "--template", "some-uuid"])
+    assert result.exit_code == 1
+
+
+def test_ask_template_missing_user_prompt():
+    from navdoc.models import AgentTemplate
+
+    template = make_agent_template(user_prompt=None)
+
+    async def _get_template(template_id):
+        return template
+
+    mock_client = MagicMock()
+    mock_client.get_template = _get_template
+
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["ask", "--template", template.id])
+
+    assert result.exit_code == 1
+    assert "user_prompt" in result.output
+
+
+def test_ask_template_api_error():
+    from navdoc.exceptions import NavdocError
+
+    async def _get_template(template_id):
+        raise NavdocError("not found")
+
+    mock_client = MagicMock()
+    mock_client.get_template = _get_template
+
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["ask", "--template", "bad-uuid"])
+
+    assert result.exit_code == 1
+    assert "not found" in result.output
+
+
+def test_chat_template_sets_template_id():
+    template = make_agent_template(user_prompt="Hello")
+    captured = {}
+
+    async def _get_template(template_id):
+        return template
+
+    async def _stream(*args, **kwargs):
+        captured["template_id"] = kwargs.get("template_id")
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.get_template = _get_template
+    mock_client.stream = _stream
+
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["chat", "--template", template.id], input="\x04")
+
+    assert result.exit_code == 0
+    assert captured.get("template_id") == template.id
+
+
+def test_chat_template_greeting_displayed():
+    template = make_agent_template(user_prompt=None, greeting="Hello! How can I help?")
+    captured = {}
+
+    async def _get_template(template_id):
+        return template
+
+    async def _stream(*args, **kwargs):
+        captured["called"] = True
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.get_template = _get_template
+    mock_client.stream = _stream
+
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["chat", "--template", template.id], input="\x04")
+
+    assert result.exit_code == 0
+    assert "Hello! How can I help?" in result.output
+    assert not captured.get("called")  # no API call since no user_prompt
+
+
+def test_chat_template_and_config_mutually_exclusive(tmp_path):
+    config = write_config(tmp_path, {"name": "T", "description": "d", "system_prompt": "s"})
+    result = runner.invoke(app, ["chat", "--config", str(config), "--template", "some-uuid"])
+    assert result.exit_code == 1
+    assert "mutually exclusive" in result.output

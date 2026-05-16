@@ -1,5 +1,5 @@
 from .client import NavdocClient
-from .models import AgentResponse, ToolCall, Document, Scope, StreamEvent
+from .models import AgentResponse, ToolCall, Document, Scope, StreamEvent, AgentTemplate
 from .exceptions import NavdocError, AuthError
 
 __all__ = [
@@ -9,6 +9,7 @@ __all__ = [
     "Document",
     "Scope",
     "StreamEvent",
+    "AgentTemplate",
     "NavdocError",
     "AuthError",
 ]
