@@ -277,7 +277,7 @@ def chat_cmd(
     history: list = []
 
     async def _send(question: str) -> str:
-        from navdoc.exceptions import NavdocError
+        from navdoc.exceptions import AuthError, NavdocError
 
         try:
             client = _make_client()
@@ -309,14 +309,18 @@ def chat_cmd(
                 console.print("[bold cyan]Claude:[/bold cyan] ", end="")
             console.print()
             return "".join(text_parts)
-        except (NavdocError, ValueError) as e:
+        except AuthError as e:
             console.print(f"\n[bold red]Error:[/bold red] {e}")
             raise typer.Exit(1)
+        except (NavdocError, ValueError) as e:
+            console.print(f"\n[bold red]Error:[/bold red] {e}")
+            return ""
 
     def turn(question: str) -> None:
         answer = asyncio.run(_send(question))
-        history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": answer})
+        if answer:
+            history.append({"role": "user", "content": question})
+            history.append({"role": "assistant", "content": answer})
 
     input_history = InMemoryHistory()
 

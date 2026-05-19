@@ -113,7 +113,9 @@ class NavdocClient:
                 message=raw.get("message"),
             )
             if event.type == "error":
-                raise NavdocError(event.message or "Server error")
+                error_body = raw.get("error") or {}
+                msg = error_body.get("message") or raw.get("message") or "Server error"
+                raise NavdocError(msg)
             yield event
 
     async def ask_server(
