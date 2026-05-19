@@ -481,6 +481,29 @@ def test_chat_hides_between_tool_text(tmp_path):
     assert "Now let me search the log." not in result.output
 
 
+def test_chat_hides_text_between_tool_use_and_result(tmp_path):
+    """Text between tool_use and tool_result is discarded (cleared on tool_result)."""
+    config = write_config(tmp_path, {
+        "name": "T", "description": "d", "system_prompt": "s",
+        "user_prompt": "Hello", "placeholders": [],
+    })
+
+    async def _stream(*args, **kwargs):
+        yield StreamEvent(type="tool_use", name="search")
+        yield StreamEvent(type="text", delta="Searching now.")   # intermediate
+        yield StreamEvent(type="tool_result")
+        yield StreamEvent(type="text", delta="Final answer.")    # final
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.stream = _stream
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
+
+    assert "Final answer." in result.output
+    assert "Searching now." not in result.output
+
+
 def test_chat_shows_text_without_tool_call(tmp_path):
     """When no tool calls occur, the full text is shown."""
     config = write_config(tmp_path, {
