@@ -89,14 +89,22 @@ class NavdocClient:
         timezone: str | None = None,
         system_prompt: str = "",
         template_id: str | None = None,
+        tools: list[str] | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         all_messages = list(messages or []) + [{"role": "user", "content": question}]
-        async for raw in self._rest.stream_post("/agent", body={
+        body: dict = {
             "messages": all_messages,
             "timezone": timezone,
-            "system_prompt": system_prompt or None,
             "template_id": template_id,
-        }):
+        }
+        if not template_id:
+            inline = {k: v for k, v in {
+                "system_prompt": system_prompt or None,
+                "tools": tools or None,
+            }.items() if v is not None}
+            if inline:
+                body["template"] = inline
+        async for raw in self._rest.stream_post("/agent", body=body):
             event = StreamEvent(
                 type=raw["type"],
                 delta=raw.get("delta"),
@@ -116,6 +124,7 @@ class NavdocClient:
         timezone: str | None = None,
         system_prompt: str = "",
         template_id: str | None = None,
+        tools: list[str] | None = None,
     ) -> AgentResponse:
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []
@@ -125,6 +134,7 @@ class NavdocClient:
             timezone=timezone,
             system_prompt=system_prompt,
             template_id=template_id,
+            tools=tools,
         ):
             if event.type == "text" and event.delta:
                 text_parts.append(event.delta)

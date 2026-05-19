@@ -31,6 +31,7 @@ class AskConfig:
     system_prompt: str
     user_prompt: str | None = None
     greeting: str | None = None
+    tools: list[str] | None = None
     placeholders: list[Placeholder] = field(default_factory=list)
 
 
@@ -90,6 +91,7 @@ def _load_config(path: Path) -> AskConfig:
         system_prompt=data.get("system_prompt", ""),
         user_prompt=data.get("user_prompt"),
         greeting=data.get("greeting"),
+        tools=data.get("tools") or None,
         placeholders=placeholders,
     )
 
@@ -101,6 +103,7 @@ def _template_to_config(template) -> AskConfig:
         system_prompt=template.system_prompt or "",
         user_prompt=template.user_prompt,
         greeting=template.greeting,
+        tools=template.tools or None,
         placeholders=[
             Placeholder(key=p.key, label=p.label, default=p.default or "")
             for p in template.placeholders
@@ -168,6 +171,7 @@ def ask_cmd(
             overrides[key.strip()] = value
 
     final_template_id: str | None = None
+    final_tools: list[str] | None = None
 
     if question is not None:
         final_question = question
@@ -187,6 +191,7 @@ def ask_cmd(
         resolved = _resolve_placeholders(config_obj, overrides)
         final_question = _render_template(config_obj.user_prompt, resolved)
         final_system_prompt = _render_template(config_obj.system_prompt, resolved)
+        final_tools = config_obj.tools
     else:  # template is not None
         config_obj = asyncio.run(_fetch_template_config(template))  # type: ignore[arg-type]
 
@@ -213,6 +218,7 @@ def ask_cmd(
                 final_question,
                 system_prompt=final_system_prompt,
                 template_id=final_template_id,
+                tools=final_tools,
             ):
                 if event.type == "text" and event.delta:
                     console.print(event.delta, end="")
@@ -284,6 +290,7 @@ def chat_cmd(
                     messages=history,
                     system_prompt="" if active_template_id else config_obj.system_prompt,
                     template_id=active_template_id,
+                    tools=None if active_template_id else config_obj.tools,
                 ):
                     if event.type == "tool_use":
                         in_tool_call = True

@@ -99,7 +99,50 @@ async def test_stream_sends_correct_body(client):
         {"role": "user", "content": "question"},
     ]
     assert received["body"]["timezone"] == "Asia/Tokyo"
-    assert received["body"]["system_prompt"] == "be helpful"
+    assert received["body"]["template"]["system_prompt"] == "be helpful"
+    assert "tools" not in received["body"].get("template", {})
+
+
+async def test_stream_sends_tools_in_template(client):
+    received = {}
+
+    async def mock_stream_post(path, body):
+        received["body"] = body
+        yield {"type": "done"}
+
+    client._rest.stream_post = mock_stream_post
+
+    async for _ in client.stream(
+        "question",
+        system_prompt="be helpful",
+        tools=["search_by_url", "add_document"],
+    ):
+        pass
+
+    assert received["body"]["template"]["system_prompt"] == "be helpful"
+    assert received["body"]["template"]["tools"] == ["search_by_url", "add_document"]
+    assert "template_id" in received["body"]
+
+
+async def test_stream_template_id_omits_template_object(client):
+    received = {}
+
+    async def mock_stream_post(path, body):
+        received["body"] = body
+        yield {"type": "done"}
+
+    client._rest.stream_post = mock_stream_post
+
+    async for _ in client.stream(
+        "question",
+        template_id="aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb",
+        system_prompt="ignored",
+        tools=["search_by_url"],
+    ):
+        pass
+
+    assert received["body"]["template_id"] == "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb"
+    assert "template" not in received["body"]
 
 
 # --- ask_server() tests ---

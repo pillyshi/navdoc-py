@@ -383,3 +383,49 @@ def test_chat_template_and_config_mutually_exclusive(tmp_path):
     result = runner.invoke(app, ["chat", "--config", str(config), "--template", "some-uuid"])
     assert result.exit_code == 1
     assert "mutually exclusive" in result.output
+
+
+def test_ask_config_tools_passed_to_stream(tmp_path):
+    config = write_config(tmp_path, {
+        "name": "T", "description": "d",
+        "system_prompt": "s",
+        "user_prompt": "Tell me about {{topic}}",
+        "tools": ["search_by_url", "add_document"],
+        "placeholders": [{"key": "topic", "label": "Topic", "default": "Python"}],
+    })
+    captured = {}
+
+    async def _stream(question, *, tools=None, **kwargs):
+        captured["tools"] = tools
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.stream = _stream
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        runner.invoke(app, ["ask", "--config", str(config)])
+    assert captured.get("tools") == ["search_by_url", "add_document"]
+
+
+def test_chat_config_tools_passed_to_stream(tmp_path):
+    config = write_config(tmp_path, {
+        "name": "T", "description": "d",
+        "system_prompt": "s",
+        "user_prompt": "Hello",
+        "tools": ["semantic_search"],
+        "placeholders": [],
+    })
+    captured = {}
+    call_count = 0
+
+    async def _stream(question, *, tools=None, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        captured["tools"] = tools
+        yield StreamEvent(type="text", delta="Hi")
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.stream = _stream
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
+    assert captured.get("tools") == ["semantic_search"]
