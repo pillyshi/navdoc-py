@@ -437,6 +437,7 @@ def template_create_cmd(
         "system_prompt": data.get("system_prompt"),
         "user_prompt": data.get("user_prompt"),
         "greeting": data.get("greeting"),
+        "required_scope_description": data.get("required_scope_description"),
         "placeholders": api_placeholders or None,
         "tools": data.get("tools"),
         "is_public": public,
@@ -461,6 +462,7 @@ def template_update_cmd(
     system_prompt: str | None = typer.Option(None, "--system-prompt", help="New system prompt."),
     user_prompt: str | None = typer.Option(None, "--user-prompt", help="New user prompt."),
     greeting: str | None = typer.Option(None, "--greeting", help="New greeting message."),
+    required_scope_description: str | None = typer.Option(None, "--required-scope-description", help="Scope requirements description."),
     public: bool | None = typer.Option(None, "--public/--private", help="Change visibility."),
 ) -> None:
     """Update fields on an existing template."""
@@ -471,6 +473,7 @@ def template_update_cmd(
         "system_prompt": system_prompt,
         "user_prompt": user_prompt,
         "greeting": greeting,
+        "required_scope_description": required_scope_description,
         "is_public": public,
     }
 

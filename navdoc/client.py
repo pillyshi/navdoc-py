@@ -161,6 +161,7 @@ class NavdocClient:
             placeholders=placeholders,
             tools=data.get("tools"),
             greeting=data.get("greeting"),
+            required_scope_description=data.get("required_scope_description"),
             is_public=data.get("is_public", False),
             star_count=data.get("star_count", 0),
             is_starred=data.get("is_starred", False),

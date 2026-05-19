@@ -55,6 +55,7 @@ class AgentTemplate:
     placeholders: list[TemplatePlaceholder]
     tools: list[str] | None
     greeting: str | None
+    required_scope_description: str | None
     is_public: bool
     star_count: int
     is_starred: bool

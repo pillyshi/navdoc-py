@@ -205,6 +205,7 @@ def make_agent_template(
         placeholders=placeholders,
         tools=None,
         greeting=greeting,
+        required_scope_description=None,
         is_public=False,
         star_count=0,
         is_starred=False,
