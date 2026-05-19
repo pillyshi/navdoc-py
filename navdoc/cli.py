@@ -338,7 +338,6 @@ def chat_cmd(
     try:
         if config_obj.greeting and not no_initial_message:
             console.print(f"[bold cyan]Claude:[/bold cyan] {config_obj.greeting}")
-            history.append({"role": "assistant", "content": config_obj.greeting})
 
         if config_obj.user_prompt and not no_initial_message:
             resolved = _resolve_placeholders(config_obj, overrides)
