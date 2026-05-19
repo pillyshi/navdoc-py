@@ -431,16 +431,15 @@ def test_chat_config_tools_passed_to_stream(tmp_path):
     assert captured.get("tools") == ["semantic_search"]
 
 
-def test_chat_hides_pre_tool_text(tmp_path):
-    """Text before a tool call is discarded; only post-tool text is shown."""
+def test_chat_streams_all_text_events(tmp_path):
+    """All text events are streamed; server-side thinking filter ensures they are final."""
     config = write_config(tmp_path, {
         "name": "T", "description": "d", "system_prompt": "s",
         "user_prompt": "Hello", "placeholders": [],
     })
 
     async def _stream(*args, **kwargs):
-        yield StreamEvent(type="text", delta="I'll search for that.")
-        yield StreamEvent(type="tool_use", name="semantic_search")
+        yield StreamEvent(type="tool_use", name="search")
         yield StreamEvent(type="tool_result")
         yield StreamEvent(type="text", delta="Here is the answer.")
         yield StreamEvent(type="done")
@@ -451,57 +450,6 @@ def test_chat_hides_pre_tool_text(tmp_path):
         result = runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
 
     assert "Here is the answer." in result.output
-    assert "I'll search for that." not in result.output
-
-
-def test_chat_hides_between_tool_text(tmp_path):
-    """Text between multiple tool calls is also discarded."""
-    config = write_config(tmp_path, {
-        "name": "T", "description": "d", "system_prompt": "s",
-        "user_prompt": "Hello", "placeholders": [],
-    })
-
-    async def _stream(*args, **kwargs):
-        yield StreamEvent(type="text", delta="Let me check the date.")
-        yield StreamEvent(type="tool_use", name="get_date")
-        yield StreamEvent(type="tool_result")
-        yield StreamEvent(type="text", delta="Now let me search the log.")
-        yield StreamEvent(type="tool_use", name="semantic_search")
-        yield StreamEvent(type="tool_result")
-        yield StreamEvent(type="text", delta="Final answer.")
-        yield StreamEvent(type="done")
-
-    mock_client = MagicMock()
-    mock_client.stream = _stream
-    with patch("navdoc.cli._make_client", return_value=mock_client):
-        result = runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
-
-    assert "Final answer." in result.output
-    assert "Let me check the date." not in result.output
-    assert "Now let me search the log." not in result.output
-
-
-def test_chat_hides_text_between_tool_use_and_result(tmp_path):
-    """Text between tool_use and tool_result is discarded (cleared on tool_result)."""
-    config = write_config(tmp_path, {
-        "name": "T", "description": "d", "system_prompt": "s",
-        "user_prompt": "Hello", "placeholders": [],
-    })
-
-    async def _stream(*args, **kwargs):
-        yield StreamEvent(type="tool_use", name="search")
-        yield StreamEvent(type="text", delta="Searching now.")   # intermediate
-        yield StreamEvent(type="tool_result")
-        yield StreamEvent(type="text", delta="Final answer.")    # final
-        yield StreamEvent(type="done")
-
-    mock_client = MagicMock()
-    mock_client.stream = _stream
-    with patch("navdoc.cli._make_client", return_value=mock_client):
-        result = runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
-
-    assert "Final answer." in result.output
-    assert "Searching now." not in result.output
 
 
 def test_chat_shows_text_without_tool_call(tmp_path):
