@@ -294,6 +294,7 @@ def chat_cmd(
                 ):
                     if event.type == "tool_use":
                         has_tool_call = True
+                        post_tool_text.clear()
                         status.update(f"[dim]{event.name or 'searching'}…[/dim]")
                     elif event.type == "tool_result":
                         status.update("[dim]thinking…[/dim]")

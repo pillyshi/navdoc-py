@@ -454,6 +454,33 @@ def test_chat_hides_pre_tool_text(tmp_path):
     assert "I'll search for that." not in result.output
 
 
+def test_chat_hides_between_tool_text(tmp_path):
+    """Text between multiple tool calls is also discarded."""
+    config = write_config(tmp_path, {
+        "name": "T", "description": "d", "system_prompt": "s",
+        "user_prompt": "Hello", "placeholders": [],
+    })
+
+    async def _stream(*args, **kwargs):
+        yield StreamEvent(type="text", delta="Let me check the date.")
+        yield StreamEvent(type="tool_use", name="get_date")
+        yield StreamEvent(type="tool_result")
+        yield StreamEvent(type="text", delta="Now let me search the log.")
+        yield StreamEvent(type="tool_use", name="semantic_search")
+        yield StreamEvent(type="tool_result")
+        yield StreamEvent(type="text", delta="Final answer.")
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.stream = _stream
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
+
+    assert "Final answer." in result.output
+    assert "Let me check the date." not in result.output
+    assert "Now let me search the log." not in result.output
+
+
 def test_chat_shows_text_without_tool_call(tmp_path):
     """When no tool calls occur, the full text is shown."""
     config = write_config(tmp_path, {
