@@ -29,6 +29,13 @@ class Scope:
 
 
 @dataclass
+class AgentTool:
+    name: str
+    description: str
+    input_schema: dict = field(default_factory=dict)
+
+
+@dataclass
 class StreamEvent:
     type: str        # "text" | "tool_use" | "tool_result" | "done" | "error"
     delta: str | None = None    # type=text

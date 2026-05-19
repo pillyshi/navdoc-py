@@ -505,5 +505,31 @@ def template_delete_cmd(
     console.print(f"Deleted template {template_id}")
 
 
+@app.command("tools")
+def tools_cmd() -> None:
+    """List available agent tools."""
+    from navdoc.exceptions import NavdocError
+
+    async def _run():
+        return await _make_client().list_tools()
+
+    try:
+        tools = asyncio.run(_run())
+    except (NavdocError, ValueError) as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(1)
+
+    if not tools:
+        console.print("[dim]No tools available.[/dim]")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Name")
+    table.add_column("Description")
+    for t in tools:
+        table.add_row(t.name, t.description)
+    console.print(table)
+
+
 def main() -> None:
     app()

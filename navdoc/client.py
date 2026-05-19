@@ -1,7 +1,7 @@
 import os
 from collections.abc import AsyncGenerator
 
-from .models import AgentResponse, AgentTemplate, Document, Scope, StreamEvent, TemplatePlaceholder, ToolCall
+from .models import AgentResponse, AgentTemplate, AgentTool, Document, Scope, StreamEvent, TemplatePlaceholder, ToolCall
 from .rest import NavdocREST
 from .exceptions import NavdocError
 
@@ -177,6 +177,18 @@ class NavdocClient:
             is_starred=data.get("is_starred", False),
             is_mine=data.get("is_mine", False),
         )
+
+    async def list_tools(self) -> list[AgentTool]:
+        data = await self._rest.get("/agent/tools")
+        items = data if isinstance(data, list) else []
+        return [
+            AgentTool(
+                name=t.get("name", ""),
+                description=t.get("description", ""),
+                input_schema=t.get("inputSchema", {}),
+            )
+            for t in items
+        ]
 
     async def list_templates(self) -> list[AgentTemplate]:
         data = await self._rest.get("/agent-templates")
