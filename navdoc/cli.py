@@ -281,9 +281,9 @@ def chat_cmd(
 
         try:
             client = _make_client()
-            text_parts: list[str] = []
-            received_text = False
-            in_tool_call = False
+            pre_tool_text: list[str] = []
+            post_tool_text: list[str] = []
+            has_tool_call = False
             with console.status("[dim]thinking…[/dim]") as status:
                 async for event in client.stream(
                     question,
@@ -293,28 +293,18 @@ def chat_cmd(
                     tools=None if active_template_id else config_obj.tools,
                 ):
                     if event.type == "tool_use":
-                        in_tool_call = True
+                        has_tool_call = True
                         status.update(f"[dim]{event.name or 'searching'}…[/dim]")
-                        if received_text:
-                            console.print()
-                            status.start()
                     elif event.type == "tool_result":
-                        in_tool_call = False
-                        if received_text:
-                            status.stop()
-                        else:
-                            status.update("[dim]thinking…[/dim]")
+                        status.update("[dim]thinking…[/dim]")
                     elif event.type == "text" and event.delta:
-                        if not received_text:
-                            status.stop()
-                            console.print("[bold cyan]Claude:[/bold cyan] ", end="")
-                            received_text = True
-                        console.print(event.delta, end="")
-                        text_parts.append(event.delta)
-            if not received_text:
-                console.print("[bold cyan]Claude:[/bold cyan] ", end="")
-            console.print()
-            return "".join(text_parts)
+                        if has_tool_call:
+                            post_tool_text.append(event.delta)
+                        else:
+                            pre_tool_text.append(event.delta)
+            final_parts = post_tool_text if has_tool_call else pre_tool_text
+            console.print(f"[bold cyan]Claude:[/bold cyan] {''.join(final_parts)}")
+            return "".join(final_parts)
         except (NavdocError, ValueError) as e:
             console.print(f"\n[bold red]Error:[/bold red] {e}")
             raise typer.Exit(1)

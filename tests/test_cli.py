@@ -429,3 +429,45 @@ def test_chat_config_tools_passed_to_stream(tmp_path):
     with patch("navdoc.cli._make_client", return_value=mock_client):
         runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
     assert captured.get("tools") == ["semantic_search"]
+
+
+def test_chat_hides_pre_tool_text(tmp_path):
+    """Text before a tool call is discarded; only post-tool text is shown."""
+    config = write_config(tmp_path, {
+        "name": "T", "description": "d", "system_prompt": "s",
+        "user_prompt": "Hello", "placeholders": [],
+    })
+
+    async def _stream(*args, **kwargs):
+        yield StreamEvent(type="text", delta="I'll search for that.")
+        yield StreamEvent(type="tool_use", name="semantic_search")
+        yield StreamEvent(type="tool_result")
+        yield StreamEvent(type="text", delta="Here is the answer.")
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.stream = _stream
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
+
+    assert "Here is the answer." in result.output
+    assert "I'll search for that." not in result.output
+
+
+def test_chat_shows_text_without_tool_call(tmp_path):
+    """When no tool calls occur, the full text is shown."""
+    config = write_config(tmp_path, {
+        "name": "T", "description": "d", "system_prompt": "s",
+        "user_prompt": "Hello", "placeholders": [],
+    })
+
+    async def _stream(*args, **kwargs):
+        yield StreamEvent(type="text", delta="Direct answer.")
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.stream = _stream
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
+
+    assert "Direct answer." in result.output
