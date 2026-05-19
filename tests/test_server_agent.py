@@ -145,48 +145,41 @@ async def test_stream_template_id_omits_template_object(client):
     assert "template" not in received["body"]
 
 
-# --- ask_server() tests ---
+async def test_stream_sends_user_prompt_in_template(client):
+    received = {}
 
-async def test_ask_server_collects_answer(client):
     async def mock_stream_post(path, body):
-        for event in [
-            {"type": "text", "delta": "The answer is "},
-            {"type": "text", "delta": "42"},
-            {"type": "done"},
-        ]:
-            yield event
+        received["body"] = body
+        yield {"type": "done"}
 
     client._rest.stream_post = mock_stream_post
 
+    async for _ in client.stream("q", user_prompt="Tell me about {{topic}}"):
+        pass
+
+    assert received["body"]["template"]["user_prompt"] == "Tell me about {{topic}}"
+
+
+# --- ask_server() tests ---
+
+async def test_ask_server_returns_response(client):
+    client._rest.post = AsyncMock(return_value={"response": "The answer is 42"})
     result = await client.ask_server("What is the answer?")
     assert isinstance(result, AgentResponse)
     assert result.answer == "The answer is 42"
     assert result.tool_calls == []
 
 
-async def test_ask_server_collects_tool_calls(client):
-    async def mock_stream_post(path, body):
-        for event in [
-            {"type": "tool_use", "name": "search", "input": {"query": "x"}},
-            {"type": "tool_result", "name": "search", "input": {"query": "x"}},
-            {"type": "text", "delta": "Found it"},
-            {"type": "done"},
-        ]:
-            yield event
-
-    client._rest.stream_post = mock_stream_post
-
-    result = await client.ask_server("Find x")
-    assert result.answer == "Found it"
-    assert result.tool_calls == [ToolCall(name="search", input={"query": "x"}, output={})]
+async def test_ask_server_sends_correct_body(client):
+    client._rest.post = AsyncMock(return_value={"response": ""})
+    await client.ask_server("q", system_prompt="be helpful", tools=["search"])
+    call_body = client._rest.post.call_args[1]["body"]
+    assert call_body["message"] == "q"
+    assert call_body["template"]["system_prompt"] == "be helpful"
 
 
 async def test_ask_server_raises_on_error(client):
-    async def mock_stream_post(path, body):
-        yield {"type": "error", "message": "internal error"}
-
-    client._rest.stream_post = mock_stream_post
-
+    client._rest.post = AsyncMock(side_effect=NavdocError("internal error"))
     with pytest.raises(NavdocError):
         await client.ask_server("q")
 

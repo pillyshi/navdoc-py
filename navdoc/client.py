@@ -88,6 +88,7 @@ class NavdocClient:
         messages: list[dict] | None = None,
         timezone: str | None = None,
         system_prompt: str = "",
+        user_prompt: str | None = None,
         template_id: str | None = None,
         tools: list[str] | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
@@ -100,6 +101,7 @@ class NavdocClient:
         if not template_id:
             inline = {k: v for k, v in {
                 "system_prompt": system_prompt or None,
+                "user_prompt": user_prompt or None,
                 "tools": tools or None,
             }.items() if v is not None}
             if inline:
@@ -122,33 +124,34 @@ class NavdocClient:
         self,
         question: str,
         *,
-        messages: list[dict] | None = None,
         timezone: str | None = None,
         system_prompt: str = "",
+        user_prompt: str | None = None,
         template_id: str | None = None,
         tools: list[str] | None = None,
+        output_format: str = "text",
+        max_retries: int = 2,
     ) -> AgentResponse:
-        text_parts: list[str] = []
-        tool_calls: list[ToolCall] = []
-        async for event in self.stream(
-            question,
-            messages=messages,
-            timezone=timezone,
-            system_prompt=system_prompt,
-            template_id=template_id,
-            tools=tools,
-        ):
-            if event.type == "text" and event.delta:
-                text_parts.append(event.delta)
-            elif event.type == "tool_result":
-                tool_calls.append(ToolCall(
-                    name=event.name or "",
-                    input=event.input or {},
-                    output={},
-                ))
+        body: dict = {
+            "message": question,
+            "timezone": timezone,
+            "template_id": template_id,
+            "output_format": output_format,
+            "max_retries": max_retries,
+        }
+        if not template_id:
+            inline = {k: v for k, v in {
+                "system_prompt": system_prompt or None,
+                "user_prompt": user_prompt or None,
+                "tools": tools or None,
+            }.items() if v is not None}
+            if inline:
+                body["template"] = inline
+        data = await self._rest.post("/agent/ask", body=body)
+        response = data.get("response") or ""
         return AgentResponse(
-            answer="".join(text_parts),
-            tool_calls=tool_calls,
+            answer=str(response) if not isinstance(response, str) else response,
+            tool_calls=[],
             model="",
             usage={},
         )
