@@ -239,6 +239,7 @@ def chat_cmd(
     no_initial_message: bool = typer.Option(
         False, "--no-initial-message", help="Do not send user_prompt as the first message."
     ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show tool call details."),
 ) -> None:
     """Start an interactive multi-turn chat session."""
     if config is not None and template is not None:
@@ -298,6 +299,10 @@ def chat_cmd(
                             status.start()
                     elif event.type == "tool_result":
                         status.update("[dim]thinking…[/dim]")
+                        if verbose and event.name:
+                            import json as _json
+                            input_str = _json.dumps(event.input, ensure_ascii=False) if event.input else ""
+                            console.print(f"[dim]  ↳ {event.name}({input_str})[/dim]")
                     elif event.type == "text" and event.delta:
                         if not received_text:
                             status.stop()

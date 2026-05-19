@@ -469,3 +469,43 @@ def test_chat_shows_text_without_tool_call(tmp_path):
         result = runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
 
     assert "Direct answer." in result.output
+
+
+def test_chat_verbose_shows_tool_result(tmp_path):
+    config = write_config(tmp_path, {
+        "name": "T", "description": "d", "system_prompt": "s",
+        "user_prompt": "Hello", "placeholders": [],
+    })
+
+    async def _stream(*args, **kwargs):
+        yield StreamEvent(type="tool_use", name="semantic_search")
+        yield StreamEvent(type="tool_result", name="semantic_search", input={"query": "test"})
+        yield StreamEvent(type="text", delta="Answer.")
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.stream = _stream
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["chat", "--config", str(config), "--verbose"], input="exit\n")
+
+    assert "↳ semantic_search" in result.output
+
+
+def test_chat_no_verbose_hides_tool_result(tmp_path):
+    config = write_config(tmp_path, {
+        "name": "T", "description": "d", "system_prompt": "s",
+        "user_prompt": "Hello", "placeholders": [],
+    })
+
+    async def _stream(*args, **kwargs):
+        yield StreamEvent(type="tool_use", name="semantic_search")
+        yield StreamEvent(type="tool_result", name="semantic_search", input={"query": "test"})
+        yield StreamEvent(type="text", delta="Answer.")
+        yield StreamEvent(type="done")
+
+    mock_client = MagicMock()
+    mock_client.stream = _stream
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["chat", "--config", str(config)], input="exit\n")
+
+    assert "↳" not in result.output
