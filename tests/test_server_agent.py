@@ -160,6 +160,21 @@ async def test_stream_sends_user_prompt_in_template(client):
     assert received["body"]["template"]["user_prompt"] == "Tell me about {{topic}}"
 
 
+async def test_stream_sends_temperature_in_template(client):
+    received = {}
+
+    async def mock_stream_post(path, body):
+        received["body"] = body
+        yield {"type": "done"}
+
+    client._rest.stream_post = mock_stream_post
+
+    async for _ in client.stream("q", temperature=0.5):
+        pass
+
+    assert received["body"]["template"]["temperature"] == 0.5
+
+
 # --- ask_server() tests ---
 
 async def test_ask_server_returns_response(client):
@@ -176,6 +191,15 @@ async def test_ask_server_sends_correct_body(client):
     call_body = client._rest.post.call_args[1]["body"]
     assert call_body["message"] == "q"
     assert call_body["template"]["system_prompt"] == "be helpful"
+    assert "output_format" not in call_body  # output_format is inside template, not top-level
+
+
+async def test_ask_server_output_format_in_template(client):
+    client._rest.post = AsyncMock(return_value={"response": None})
+    await client.ask_server("q", output_format="none")
+    call_body = client._rest.post.call_args[1]["body"]
+    assert call_body["template"]["output_format"] == "none"
+    assert "output_format" not in call_body
 
 
 async def test_ask_server_raises_on_error(client):

@@ -23,7 +23,7 @@ class NavdocREST:
         return resp.json()
 
     async def post(self, path: str, body: dict) -> dict:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=None)) as client:
             resp = await client.post(
                 f"{REST_BASE_URL}{path}",
                 headers=self._headers,

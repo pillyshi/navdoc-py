@@ -1,3 +1,4 @@
+import json
 import os
 from collections.abc import AsyncGenerator
 
@@ -91,6 +92,7 @@ class NavdocClient:
         user_prompt: str | None = None,
         template_id: str | None = None,
         tools: list[str] | None = None,
+        temperature: float | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         all_messages = list(messages or []) + [{"role": "user", "content": question}]
         body: dict = {
@@ -103,6 +105,7 @@ class NavdocClient:
                 "system_prompt": system_prompt or None,
                 "user_prompt": user_prompt or None,
                 "tools": tools or None,
+                "temperature": temperature,
             }.items() if v is not None}
             if inline:
                 body["template"] = inline
@@ -131,12 +134,12 @@ class NavdocClient:
         tools: list[str] | None = None,
         output_format: str = "text",
         max_retries: int = 2,
+        temperature: float | None = None,
     ) -> AgentResponse:
         body: dict = {
             "message": question,
             "timezone": timezone,
             "template_id": template_id,
-            "output_format": output_format,
             "max_retries": max_retries,
         }
         if not template_id:
@@ -144,13 +147,21 @@ class NavdocClient:
                 "system_prompt": system_prompt or None,
                 "user_prompt": user_prompt or None,
                 "tools": tools or None,
+                "output_format": output_format,
+                "temperature": temperature,
             }.items() if v is not None}
             if inline:
                 body["template"] = inline
         data = await self._rest.post("/agent/ask", body=body)
         response = data.get("response") or ""
+        if isinstance(response, str):
+            answer = response
+        elif response:
+            answer = json.dumps(response, ensure_ascii=False)
+        else:
+            answer = ""
         return AgentResponse(
-            answer=str(response) if not isinstance(response, str) else response,
+            answer=answer,
             tool_calls=[],
             model="",
             usage={},
@@ -181,6 +192,7 @@ class NavdocClient:
             star_count=data.get("star_count", 0),
             is_starred=data.get("is_starred", False),
             is_mine=data.get("is_mine", False),
+            temperature=data.get("temperature"),
         )
 
     async def list_tools(self) -> list[AgentTool]:

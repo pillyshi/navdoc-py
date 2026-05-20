@@ -67,3 +67,4 @@ class AgentTemplate:
     star_count: int
     is_starred: bool
     is_mine: bool
+    temperature: float | None = None

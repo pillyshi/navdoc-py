@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +18,16 @@ from rich.table import Table
 console = Console()
 
 
+def _local_timezone() -> str | None:
+    try:
+        path = os.readlink("/etc/localtime")
+        if "zoneinfo/" in path:
+            return path.split("zoneinfo/")[-1]
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 @dataclass
 class Placeholder:
     key: str
@@ -32,6 +43,8 @@ class AskConfig:
     user_prompt: str | None = None
     greeting: str | None = None
     tools: list[str] | None = None
+    output_format: str = "text"
+    temperature: float | None = None
     placeholders: list[Placeholder] = field(default_factory=list)
 
 
@@ -49,7 +62,7 @@ def _make_client() -> "NavdocClient":  # noqa: F821
     return NavdocClient()
 
 
-def _read_json(path: Path) -> dict:
+def _read_config(path: Path) -> dict:
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -58,19 +71,27 @@ def _read_json(path: Path) -> dict:
     except PermissionError:
         console.print(f"[bold red]Error:[/bold red] cannot read config file: '{path}'")
         raise typer.Exit(1)
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as e:
-        console.print(f"[bold red]Error:[/bold red] invalid JSON in '{path}': {e}")
-        raise typer.Exit(1)
+    if path.suffix in (".yml", ".yaml"):
+        import yaml
+        try:
+            data = yaml.safe_load(text)
+        except yaml.YAMLError as e:
+            console.print(f"[bold red]Error:[/bold red] invalid YAML in '{path}': {e}")
+            raise typer.Exit(1)
+    else:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            console.print(f"[bold red]Error:[/bold red] invalid JSON in '{path}': {e}")
+            raise typer.Exit(1)
     if not isinstance(data, dict):
-        console.print("[bold red]Error:[/bold red] config must be a JSON object")
+        console.print("[bold red]Error:[/bold red] config must be a JSON/YAML object")
         raise typer.Exit(1)
     return data
 
 
 def _load_config(path: Path) -> AskConfig:
-    data = _read_json(path)
+    data = _read_config(path)
 
     placeholders: list[Placeholder] = []
     for item in data.get("placeholders", []):
@@ -92,6 +113,8 @@ def _load_config(path: Path) -> AskConfig:
         user_prompt=data.get("user_prompt"),
         greeting=data.get("greeting"),
         tools=data.get("tools") or None,
+        output_format=data.get("output_format", "text"),
+        temperature=data.get("temperature"),
         placeholders=placeholders,
     )
 
@@ -148,34 +171,42 @@ def ask_cmd(
     config: Path | None = typer.Option(None, "--config", help="Path to config JSON file."),
     template: str | None = typer.Option(None, "--template", help="Agent template UUID."),
     var: list[str] = typer.Option([], help="Placeholder value as key=value."),
-    system_prompt_opt: str = typer.Option("", "--system-prompt", help="System prompt (used without --config/--template)."),
+    timezone: str | None = typer.Option(None, "--timezone", help="IANA timezone. Defaults to local timezone."),
 ) -> None:
     """Run a one-shot ask query."""
     if config is not None and template is not None:
         console.print("[bold red]Error:[/bold red] --config and --template are mutually exclusive.")
-        raise typer.Exit(1)
-    if question is not None and (config is not None or template is not None):
-        console.print("[bold red]Error:[/bold red] cannot use QUESTION with --config or --template.")
         raise typer.Exit(1)
     if question is None and config is None and template is None:
         console.print("[bold red]Error:[/bold red] provide a QUESTION, --config, or --template.")
         raise typer.Exit(1)
 
     overrides: dict[str, str] = {}
-    if question is None:
-        for item in var:
-            if "=" not in item:
-                console.print(f"[yellow]Warning:[/yellow] ignoring --var '{item}' (no '=' found)")
-                continue
-            key, _, value = item.partition("=")
-            overrides[key.strip()] = value
+    for item in var:
+        if "=" not in item:
+            console.print(f"[yellow]Warning:[/yellow] ignoring --var '{item}' (no '=' found)")
+            continue
+        key, _, value = item.partition("=")
+        overrides[key.strip()] = value
 
     final_template_id: str | None = None
+    final_system_prompt: str = ""
     final_tools: list[str] | None = None
+    final_output_format: str = "text"
+    final_temperature: float | None = None
 
-    if question is not None:
+    if question is not None and config is not None:
+        config_obj = _load_config(config)
         final_question = question
-        final_system_prompt = system_prompt_opt
+        final_system_prompt = config_obj.system_prompt
+        final_tools = config_obj.tools
+        final_output_format = config_obj.output_format
+        final_temperature = config_obj.temperature
+    elif question is not None and template is not None:
+        final_question = question
+        final_template_id = template
+    elif question is not None:
+        final_question = question
     elif config is not None:
         config_obj = _load_config(config)
 
@@ -192,6 +223,8 @@ def ask_cmd(
         final_question = _render_template(config_obj.user_prompt, resolved)
         final_system_prompt = _render_template(config_obj.system_prompt, resolved)
         final_tools = config_obj.tools
+        final_output_format = config_obj.output_format
+        final_temperature = config_obj.temperature
     else:  # template is not None
         config_obj = asyncio.run(_fetch_template_config(template))  # type: ignore[arg-type]
 
@@ -206,7 +239,6 @@ def ask_cmd(
 
         resolved = _resolve_placeholders(config_obj, overrides)
         final_question = _render_template(config_obj.user_prompt, resolved)
-        final_system_prompt = ""
         final_template_id = template
 
     async def _run() -> None:
@@ -214,15 +246,17 @@ def ask_cmd(
 
         try:
             client = _make_client()
-            async for event in client.stream(
+            result = await client.ask_server(
                 final_question,
+                timezone=timezone or _local_timezone(),
                 system_prompt=final_system_prompt,
                 template_id=final_template_id,
                 tools=final_tools,
-            ):
-                if event.type == "text" and event.delta:
-                    console.print(event.delta, end="")
-            console.print()
+                output_format=final_output_format,
+                temperature=final_temperature,
+            )
+            if result.answer:
+                print(result.answer)
         except (NavdocError, ValueError) as e:
             console.print(f"[bold red]Error:[/bold red] {e}")
             raise typer.Exit(1)
@@ -288,6 +322,7 @@ def chat_cmd(
                 async for event in client.stream(
                     question,
                     messages=history,
+                    timezone=_local_timezone(),
                     system_prompt="" if active_template_id else config_obj.system_prompt,
                     template_id=active_template_id,
                     tools=None if active_template_id else config_obj.tools,
@@ -381,6 +416,29 @@ def _template_callback() -> None:
     """Manage agent templates."""
 
 
+@template_app.command("init")
+def template_init_cmd(
+    output: Path = typer.Argument(Path("template.json"), help="Output file path."),
+) -> None:
+    """Create a blank template config JSON file."""
+    if output.exists():
+        console.print(f"[bold red]Error:[/bold red] '{output}' already exists.")
+        raise typer.Exit(1)
+    scaffold = {
+        "name": "",
+        "description": "",
+        "system_prompt": "",
+        "user_prompt": "",
+        "tools": [],
+        "output_format": "text",
+        "temperature": None,
+        "greeting": "",
+        "placeholders": [],
+    }
+    output.write_text(json.dumps(scaffold, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    console.print(f"Created [bold]{output}[/bold]")
+
+
 @template_app.command("list")
 def template_list_cmd() -> None:
     """List available agent templates."""
@@ -426,7 +484,7 @@ def template_create_cmd(
     """Create a template from a local config JSON file."""
     from navdoc.exceptions import NavdocError
 
-    data = _read_json(config_path)
+    data = _read_config(config_path)
 
     api_placeholders = []
     for item in data.get("placeholders", []):
@@ -449,6 +507,7 @@ def template_create_cmd(
         "required_scope_description": data.get("required_scope_description"),
         "placeholders": api_placeholders or None,
         "tools": data.get("tools"),
+        "temperature": data.get("temperature"),
         "is_public": public,
     }
 
@@ -472,6 +531,7 @@ def template_update_cmd(
     user_prompt: str | None = typer.Option(None, "--user-prompt", help="New user prompt."),
     greeting: str | None = typer.Option(None, "--greeting", help="New greeting message."),
     required_scope_description: str | None = typer.Option(None, "--required-scope-description", help="Scope requirements description."),
+    temperature: float | None = typer.Option(None, "--temperature", help="Sampling temperature (0.0–1.0)."),
     public: bool | None = typer.Option(None, "--public/--private", help="Change visibility."),
 ) -> None:
     """Update fields on an existing template."""
@@ -483,6 +543,7 @@ def template_update_cmd(
         "user_prompt": user_prompt,
         "greeting": greeting,
         "required_scope_description": required_scope_description,
+        "temperature": temperature,
         "is_public": public,
     }
 

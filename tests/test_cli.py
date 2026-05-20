@@ -1,12 +1,12 @@
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
 from navdoc.cli import app
-from navdoc.models import StreamEvent
+from navdoc.models import AgentResponse, StreamEvent
 
 runner = CliRunner()
 
@@ -21,35 +21,35 @@ def make_streaming_client(events: list[StreamEvent]):
     return client
 
 
+def make_ask_client(answer: str = ""):
+    client = MagicMock()
+    client.ask_server = AsyncMock(return_value=AgentResponse(answer=answer, tool_calls=[], model="", usage={}))
+    return client
+
+
 def write_config(tmp_path: Path, data: dict) -> Path:
     config = tmp_path / "config.json"
     config.write_text(json.dumps(data))
     return config
 
 
+def write_yaml_config(tmp_path: Path, data: dict) -> Path:
+    import yaml
+    config = tmp_path / "config.yaml"
+    config.write_text(yaml.dump(data, allow_unicode=True))
+    return config
+
+
 # --- ask command ---
 
 def test_ask_direct_question():
-    events = [StreamEvent(type="text", delta="Hello"), StreamEvent(type="done")]
-    mock_client = make_streaming_client(events)
+    mock_client = make_ask_client(answer="Hello")
     with patch("navdoc.cli._make_client", return_value=mock_client):
         result = runner.invoke(app, ["ask", "What is asyncio?"])
     assert result.exit_code == 0
     assert "Hello" in result.output
 
 
-def test_ask_direct_question_with_system_prompt():
-    captured = {}
-
-    async def _stream(question, *, system_prompt="", **kwargs):
-        captured["system_prompt"] = system_prompt
-        yield StreamEvent(type="done")
-
-    mock_client = MagicMock()
-    mock_client.stream = _stream
-    with patch("navdoc.cli._make_client", return_value=mock_client):
-        runner.invoke(app, ["ask", "Hello", "--system-prompt", "Be concise."])
-    assert captured.get("system_prompt") == "Be concise."
 
 
 def test_ask_no_args_errors():
@@ -57,10 +57,24 @@ def test_ask_no_args_errors():
     assert result.exit_code == 1
 
 
-def test_ask_question_and_config_errors(tmp_path):
-    config = write_config(tmp_path, {"name": "T", "description": "d", "system_prompt": "s", "user_prompt": "q"})
-    result = runner.invoke(app, ["ask", "hello", "--config", str(config)])
-    assert result.exit_code == 1
+def test_ask_question_with_config(tmp_path):
+    config = write_config(tmp_path, {"name": "T", "description": "d", "system_prompt": "sys", "tools": ["semantic_search"]})
+    mock_client = make_ask_client(answer="Answer")
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["ask", "hello", "--config", str(config)])
+    assert result.exit_code == 0
+    assert mock_client.ask_server.call_args[0][0] == "hello"
+    assert mock_client.ask_server.call_args[1]["system_prompt"] == "sys"
+    assert mock_client.ask_server.call_args[1]["tools"] == ["semantic_search"]
+
+
+def test_ask_yaml_config(tmp_path):
+    config = write_yaml_config(tmp_path, {"name": "T", "description": "d", "system_prompt": "yaml sys", "tools": ["semantic_search"]})
+    mock_client = make_ask_client(answer="Answer")
+    with patch("navdoc.cli._make_client", return_value=mock_client):
+        result = runner.invoke(app, ["ask", "hello", "--config", str(config)])
+    assert result.exit_code == 0
+    assert mock_client.ask_server.call_args[1]["system_prompt"] == "yaml sys"
 
 
 def test_ask_streams_text(tmp_path):
@@ -71,13 +85,11 @@ def test_ask_streams_text(tmp_path):
         "user_prompt": "What is {{topic}}?",
         "placeholders": [{"key": "topic", "label": "Topic", "default": "asyncio"}],
     })
-    events = [StreamEvent(type="text", delta="Hello "), StreamEvent(type="text", delta="world"), StreamEvent(type="done")]
-    mock_client = make_streaming_client(events)
+    mock_client = make_ask_client(answer="Hello world")
     with patch("navdoc.cli._make_client", return_value=mock_client):
         result = runner.invoke(app, ["ask", "--config", str(config)])
     assert result.exit_code == 0
-    assert "Hello " in result.output
-    assert "world" in result.output
+    assert "Hello world" in result.output
 
 
 def test_ask_missing_user_prompt(tmp_path):
@@ -93,17 +105,10 @@ def test_ask_var_override(tmp_path):
         "user_prompt": "Tell me about {{topic}}",
         "placeholders": [{"key": "topic", "label": "Topic", "default": "default"}],
     })
-    captured = {}
-
-    async def _stream(question, *, system_prompt="", **kwargs):
-        captured["question"] = question
-        yield StreamEvent(type="done")
-
-    mock_client = MagicMock()
-    mock_client.stream = _stream
+    mock_client = make_ask_client()
     with patch("navdoc.cli._make_client", return_value=mock_client):
         runner.invoke(app, ["ask", "--config", str(config), "--var", "topic=Python"])
-    assert captured.get("question") == "Tell me about Python"
+    assert mock_client.ask_server.call_args[0][0] == "Tell me about Python"
 
 
 def test_ask_error_exits(tmp_path):
@@ -113,13 +118,8 @@ def test_ask_error_exits(tmp_path):
         "name": "T", "description": "d", "system_prompt": "s",
         "user_prompt": "q",
     })
-
-    async def _stream(*args, **kwargs):
-        raise NavdocError("server down")
-        yield  # make it a generator
-
     mock_client = MagicMock()
-    mock_client.stream = _stream
+    mock_client.ask_server = AsyncMock(side_effect=NavdocError("server down"))
     with patch("navdoc.cli._make_client", return_value=mock_client):
         result = runner.invoke(app, ["ask", "--config", str(config)])
     assert result.exit_code == 1
@@ -215,49 +215,37 @@ def make_agent_template(
 
 def test_ask_template_fetches_and_streams():
     template = make_agent_template()
-    captured = {}
 
     async def _get_template(template_id):
         return template
 
-    async def _stream(*args, **kwargs):
-        captured["template_id"] = kwargs.get("template_id")
-        captured["question"] = args[0] if args else kwargs.get("question")
-        yield StreamEvent(type="text", delta="Answer")
-        yield StreamEvent(type="done")
-
     mock_client = MagicMock()
     mock_client.get_template = _get_template
-    mock_client.stream = _stream
+    mock_client.ask_server = AsyncMock(return_value=AgentResponse(answer="Answer", tool_calls=[], model="", usage={}))
 
     with patch("navdoc.cli._make_client", return_value=mock_client):
         result = runner.invoke(app, ["ask", "--template", template.id])
 
     assert result.exit_code == 0
     assert "Answer" in result.output
-    assert captured["template_id"] == template.id
-    assert "Python" in captured["question"]
+    assert mock_client.ask_server.call_args[1]["template_id"] == template.id
+    assert "Python" in mock_client.ask_server.call_args[0][0]
 
 
 def test_ask_template_var_override():
     template = make_agent_template()
-    captured = {}
 
     async def _get_template(template_id):
         return template
 
-    async def _stream(*args, **kwargs):
-        captured["question"] = args[0] if args else kwargs.get("question")
-        yield StreamEvent(type="done")
-
     mock_client = MagicMock()
     mock_client.get_template = _get_template
-    mock_client.stream = _stream
+    mock_client.ask_server = AsyncMock(return_value=AgentResponse(answer="", tool_calls=[], model="", usage={}))
 
     with patch("navdoc.cli._make_client", return_value=mock_client):
         runner.invoke(app, ["ask", "--template", template.id, "--var", "topic=Rust"])
 
-    assert captured.get("question") == "Tell me about Rust"
+    assert mock_client.ask_server.call_args[0][0] == "Tell me about Rust"
 
 
 def test_ask_template_auto_placeholder_skipped():
@@ -272,12 +260,9 @@ def test_ask_template_auto_placeholder_skipped():
     async def _get_template(template_id):
         return template
 
-    async def _stream(*args, **kwargs):
-        yield StreamEvent(type="done")
-
     mock_client = MagicMock()
     mock_client.get_template = _get_template
-    mock_client.stream = _stream
+    mock_client.ask_server = AsyncMock(return_value=AgentResponse(answer="", tool_calls=[], model="", usage={}))
 
     with patch("navdoc.cli._make_client", return_value=mock_client):
         with patch("navdoc.cli.Prompt.ask", side_effect=lambda label: prompted.append(label) or ""):
@@ -393,17 +378,10 @@ def test_ask_config_tools_passed_to_stream(tmp_path):
         "tools": ["search_by_url", "add_document"],
         "placeholders": [{"key": "topic", "label": "Topic", "default": "Python"}],
     })
-    captured = {}
-
-    async def _stream(question, *, tools=None, **kwargs):
-        captured["tools"] = tools
-        yield StreamEvent(type="done")
-
-    mock_client = MagicMock()
-    mock_client.stream = _stream
+    mock_client = make_ask_client()
     with patch("navdoc.cli._make_client", return_value=mock_client):
         runner.invoke(app, ["ask", "--config", str(config)])
-    assert captured.get("tools") == ["search_by_url", "add_document"]
+    assert mock_client.ask_server.call_args[1]["tools"] == ["search_by_url", "add_document"]
 
 
 def test_chat_config_tools_passed_to_stream(tmp_path):
